@@ -30,10 +30,23 @@ pub enum RepoType {
     Space,
 }
 
+impl RepoType {
+    /// The name of the repo type
+    pub fn name(&self) -> &str {
+        match self {
+            RepoType::Model => "model",
+            RepoType::Dataset => "dataset",
+            RepoType::Space => "space",
+        }
+    }
+}
+
 impl Repo {
-    /// Repo with the default branch ("main").
+    const REVISION_MAIN: &str = "master";
+
+    /// Repo with the default branch ("master").
     pub fn new(repo_id: String, repo_type: RepoType) -> Self {
-        Self::with_revision(repo_id, repo_type, "main".to_string())
+        Self::with_revision(repo_id, repo_type, Self::REVISION_MAIN.to_string())
     }
 
     /// fully qualified Repo
