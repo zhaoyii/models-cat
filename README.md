@@ -1,2 +1,2 @@
 # models-hub
-The official Python client for the Modelscope Hub.
+The unofficial Rust client for the Modelscope Hub. Modeled after [hf-hub](https://github.com/huggingface/hf-hub)。
