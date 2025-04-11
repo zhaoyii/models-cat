@@ -254,15 +254,6 @@ pub trait RepoOps {
     ///
     /// * `filename` - Name of the file to be downloaded
     fn download_cb(&self, filename: &str, cb: impl FnMut(usize, usize));
-
-    /// upload a file
-    fn upload(&self, filename: &str);
-
-    /// delete a file
-    fn delete(&self, filename: &str);
-
-    /// check if a file exists
-    fn exists(&self, filename: &str) -> bool;
 }
 
 #[async_trait]

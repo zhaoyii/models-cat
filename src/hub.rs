@@ -2,26 +2,26 @@ use crate::utils::BLOCKING_CLIENT;
 use crate::{OpsError, Repo, RepoOps, fslock};
 use tempfile::NamedTempFile;
 
-pub struct ModelsHub {
+pub struct ModelsCat {
     endpoint: String,
     repo: Repo,
 }
 
-impl ModelsHub {
+impl ModelsCat {
     // 添加一个构建器方法
-    pub fn builder() -> ModelsHubBuilder {
-        ModelsHubBuilder::new()
+    pub fn builder() -> ModelsCatBuilder {
+        ModelsCatBuilder::new()
     }
 }
 
-pub struct ModelsHubBuilder {
+pub struct ModelsCatBuilder {
     endpoint: Option<String>,
     repo: Option<Repo>,
 }
 
-impl ModelsHubBuilder {
+impl ModelsCatBuilder {
     pub fn new() -> Self {
-        ModelsHubBuilder {
+        ModelsCatBuilder {
             endpoint: None,
             repo: None,
         }
@@ -37,8 +37,8 @@ impl ModelsHubBuilder {
         self
     }
 
-    pub fn build(self) -> Result<ModelsHub, OpsError> {
-        Ok(ModelsHub {
+    pub fn build(self) -> Result<ModelsCat, OpsError> {
+        Ok(ModelsCat {
             endpoint: self
                 .endpoint
                 .unwrap_or_else(|| "https://www.modelscope.cn".to_string()),
@@ -49,7 +49,7 @@ impl ModelsHubBuilder {
     }
 }
 
-impl RepoOps for ModelsHub {
+impl RepoOps for ModelsCat {
     /// pull a repo
     fn pull(&self) {
         unimplemented!()
@@ -60,7 +60,7 @@ impl RepoOps for ModelsHub {
         unimplemented!()
     }
 
-    /// list files in hub repo
+    /// list repos
     fn list(&self) {
         unimplemented!()
     }
@@ -98,18 +98,6 @@ impl RepoOps for ModelsHub {
     fn download_cb(&self, filename: &str, cb: impl FnMut(usize, usize)) {
         unimplemented!()
     }
-    /// upload a file
-    fn upload(&self, filename: &str) {
-        unimplemented!()
-    }
-    /// delete a file
-    fn delete(&self, filename: &str) {
-        unimplemented!()
-    }
-    /// check if a file exists
-    fn exists(&self, filename: &str) -> bool {
-        unimplemented!()
-    }
 }
 
 #[cfg(test)]
@@ -118,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_download() {
-        let hub = ModelsHub::builder()
+        let hub = ModelsCat::builder()
             .repo(Repo::new_model("BAAI/bge-large-zh-v1.5".to_string()))
             .build()
             .unwrap();
