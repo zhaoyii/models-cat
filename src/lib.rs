@@ -2,7 +2,7 @@
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
 mod fslock;
-mod hub;
+pub mod hub;
 mod ms_hub;
 mod utils;
 
@@ -11,11 +11,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use thiserror::Error;
 
-/// The actual Api to interact with the hub.
-// #[cfg(any(feature = "tokio", feature = "ureq"))]
-// pub mod api;
-
-const CACHE_HOME: &str = "CACHE_HOME";
+const CACHE_HOME: &str = "MODELS_CACHE_HOME";
 
 /// The representation of a repo on the hub.
 #[derive(Clone, Debug)]
@@ -287,7 +283,19 @@ pub trait RepoOps {
     /// # Arguments
     ///
     /// * `filename` - Name of the file to be downloaded
-    fn download_cb(&self, filename: &str, cb: impl FnMut(usize, usize));
+    fn download_with_progress(
+        &self,
+        filename: &str,
+        progress: &mut impl ProgressHandler,
+    ) -> Result<(), crate::OpsError>;
+}
+
+/// 通用进度处理接口
+pub trait ProgressHandler {
+    fn on_start(&mut self, total_size: u64);
+    /// 进度更新时触发
+    /// current: 已完成工作量（如已传输字节数）
+    fn on_progress(&mut self, current: u64);
 }
 
 #[async_trait]

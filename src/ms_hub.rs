@@ -157,9 +157,9 @@ pub fn get_repo_files(repo: &Repo) -> Result<ApiResponse, Error> {
 
 fn get_model_files(repo: &Repo) -> Result<ApiResponse, Error> {
     let repo_id = repo.repo_id();
+    let revision = repo.revision();
     let repo_url = format!(
-        "https://modelscope.cn/api/v1/models/{}/repo/files?Recursive=true",
-        repo_id
+        "https://modelscope.cn/api/v1/models/{repo_id}/repo/files?Recursive=true&Revision={revision}"
     );
     Ok(BLOCKING_CLIENT.get(&repo_url).send()?.json()?)
 }
@@ -206,13 +206,11 @@ fn request_dataset_page(
     page_size: usize,
 ) -> Result<ApiResponse, Error> {
     let repo_id = dataset.repo_id();
+    let revision = dataset.safe_revision_path();
     let url = format!(
-        "https://modelscope.cn/api/v1/datasets/{}/repo/tree?Recursive=true&Revision=master&Root=/&PageNumber={}&PageSize={}",
-        repo_id, page_number, page_size
+        "https://modelscope.cn/api/v1/datasets/{repo_id}/repo/tree?Recursive=true&Revision={revision}&Root=/&PageNumber={page_number}&PageSize={page_size}",
     );
-
     let response = BLOCKING_CLIENT.get(&url).send()?.json::<ApiResponse>()?;
-
     Ok(response)
 }
 
