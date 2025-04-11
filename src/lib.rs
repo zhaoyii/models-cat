@@ -7,10 +7,9 @@ mod ms_hub;
 mod utils;
 
 use async_trait::async_trait;
+use std::io::Write;
 use std::path::PathBuf;
 use thiserror::Error;
-
-
 
 /// The actual Api to interact with the hub.
 // #[cfg(any(feature = "tokio", feature = "ureq"))]
@@ -70,6 +69,10 @@ impl Repo {
         &self.repo_type
     }
 
+    pub fn revision(&self) -> &str {
+        &self.revision
+    }
+
     /// Create a new `Repo` instance
     pub fn cache_dir(&self) -> PathBuf {
         let prefix = self.repo_type.root_dir();
@@ -107,6 +110,37 @@ impl Repo {
     /// Revision needs to be url escaped before being used in a URL
     fn safe_revision_path(&self) -> String {
         self.revision.replace('/', "%2F")
+    }
+
+    /// get ref path
+    /// .cache/huggingface/hub/models--lm-kit--bge-m3-gguf/refs/main
+    pub fn ref_path(&self) -> PathBuf {
+        let mut ref_path = self.cache_dir();
+        ref_path.push("refs");
+        ref_path.push(self.revision());
+        ref_path
+    }
+
+    /// Creates a reference in the cache directory that points branches to the correct
+    /// commits within the blobs.
+    pub fn create_ref(&self, commit_hash: &str) -> Result<(), std::io::Error> {
+        let ref_path = self.ref_path();
+        // Needs to be done like this because revision might contain `/` creating subfolders here.
+        std::fs::create_dir_all(ref_path.parent().unwrap())?;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&ref_path)?;
+        file.write_all(commit_hash.trim().as_bytes())?;
+        Ok(())
+    }
+
+    pub fn snapshot_path(&self, commit_hash: &str) -> PathBuf {
+        let mut pointer_path = self.cache_dir();
+        pointer_path.push("snapshots");
+        pointer_path.push(commit_hash);
+        pointer_path
     }
 }
 
