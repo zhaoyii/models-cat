@@ -1,7 +1,16 @@
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
+mod fslock;
+mod hub;
+mod ms_hub;
+mod utils;
+
+use async_trait::async_trait;
 use std::path::PathBuf;
+use thiserror::Error;
+
+
 
 /// The actual Api to interact with the hub.
 // #[cfg(any(feature = "tokio", feature = "ureq"))]
@@ -15,6 +24,90 @@ pub struct Repo {
     repo_id: String,
     repo_type: RepoType,
     revision: String,
+    cache_dir: PathBuf,
+}
+
+impl Repo {
+    /// Create a new builder for constructing a `Repo`
+    pub fn builder() -> RepoBuilder {
+        RepoBuilder::new()
+    }
+
+    pub fn new_model(repo_id: String) -> Self {
+        RepoBuilder::new()
+            .repo_id(repo_id)
+            .repo_type(RepoType::Model)
+            .build()
+            .unwrap()
+    }
+
+    pub fn new_dataset(repo_id: String) -> Self {
+        RepoBuilder::new()
+            .repo_id(repo_id)
+            .repo_type(RepoType::Dataset)
+            .build()
+            .unwrap()
+    }
+
+    pub fn new_space(repo_id: String) -> Self {
+        RepoBuilder::new()
+            .repo_id(repo_id)
+            .repo_type(RepoType::Space)
+            .build()
+            .unwrap()
+    }
+
+    /// cache_dir
+    pub fn cache_home(&self) -> &PathBuf {
+        &self.cache_dir
+    }
+
+    pub fn repo_id(&self) -> &str {
+        &self.repo_id
+    }
+
+    pub fn repo_type(&self) -> &RepoType {
+        &self.repo_type
+    }
+
+    /// Create a new `Repo` instance
+    pub fn cache_dir(&self) -> PathBuf {
+        let prefix = self.repo_type.root_dir();
+        let mut path = self.cache_dir.clone();
+        path.push(prefix);
+        path.push(format!("{prefix}--{}", self.repo_id).replace('/', "--"));
+        path
+    }
+
+    /// Get the URL path for this repo
+    pub fn url_path(&self) -> String {
+        let prefix = self.repo_type.root_dir();
+        format!("{prefix}/{}", self.repo_id)
+    }
+
+    /// Get the URL path for this repo with revision
+    pub fn url_path_with_revision(&self) -> String {
+        let prefix = self.repo_type.root_dir();
+        format!(
+            "{prefix}/{}/revision/{}",
+            self.repo_id,
+            self.safe_revision_path()
+        )
+    }
+
+    pub fn url_path_with_resolve(&self) -> String {
+        let prefix = self.repo_type.root_dir();
+        format!(
+            "{prefix}/{}/resolve/{}",
+            self.repo_id,
+            self.safe_revision_path()
+        )
+    }
+
+    /// Revision needs to be url escaped before being used in a URL
+    fn safe_revision_path(&self) -> String {
+        self.revision.replace('/', "%2F")
+    }
 }
 
 /// The type of repo to interact with
@@ -48,267 +141,180 @@ impl RepoType {
     }
 }
 
-impl Repo {
+/// Builder for creating `Repo` instances
+#[derive(Debug)]
+pub struct RepoBuilder {
+    repo_id: Option<String>,
+    repo_type: Option<RepoType>,
+    revision: Option<String>,
+    cache_dir: Option<PathBuf>,
+}
+
+impl RepoBuilder {
     const REVISION_MAIN: &str = "master";
 
-    /// Creates a new instance with the specified repository ID and type,
-    /// using the default main branch revision.
-    ///
-    /// # Arguments
-    /// * `repo_id` - String identifier for the repository (e.g., "username/repo-name")
-    /// * `repo_type` - Type of repository (e.g., model, dataset, space)
-    ///
-    /// # Returns
-    /// A new instance of the struct
-    ///
-    /// # Examples
-    /// ```
-    /// use models_hub::{RepoType, Repo};
-    /// let repo = Repo::new("username/model-name".to_string(), RepoType::Model);
-    /// assert_eq!(repo.repo_id(), "username/model-name");
-    /// ```
-    ///
-    pub fn new(repo_id: String, repo_type: RepoType) -> Self {
-        Self::new_with_revision(repo_id, repo_type, Self::REVISION_MAIN.to_string())
-    }
-
-    /// Creates a new Repo with all fields specified, including revision
-    pub fn new_with_revision(repo_id: String, repo_type: RepoType, revision: String) -> Self {
-        Self {
-            repo_id,
-            repo_type,
-            revision,
+    /// Create a new empty builder
+    pub fn new() -> Self {
+        RepoBuilder {
+            repo_id: None,
+            repo_type: None,
+            revision: None,
+            cache_dir: None,
         }
     }
 
-    /// Shortcut for creating a model repository
-    pub fn new_model(repo_id: String) -> Self {
-        Self::new(repo_id, RepoType::Model)
+    /// Set the repository ID
+    pub fn repo_id(mut self, repo_id: impl Into<String>) -> Self {
+        self.repo_id = Some(repo_id.into());
+        self
     }
 
-    /// Shortcut for creating a dataset repository
-    pub fn new_dataset(repo_id: String) -> Self {
-        Self::new(repo_id, RepoType::Dataset)
+    /// Set the repository type
+    pub fn repo_type(mut self, repo_type: RepoType) -> Self {
+        self.repo_type = Some(repo_type);
+        self
     }
 
-    /// Shortcut for creating a space repository
-    pub fn new_space(repo_id: String) -> Self {
-        Self::new(repo_id, RepoType::Space)
+    /// Set the revision (defaults to "main")
+    pub fn revision(mut self, revision: impl Into<String>) -> Self {
+        self.revision = Some(revision.into());
+        self
     }
 
-    /// Generates a normalized folder name for cache system storage.
-    ///
-    /// The naming convention is `{type-prefix}--{repo-id}` with all `/` characters
-    /// replaced by `--` for filesystem compatibility.
-    ///
-    /// # Example
-    /// ```
-    /// use models_hub::Repo;
-    /// let repo = Repo::new_model("user/bert-base".to_string());
-    /// assert_eq!(repo.cache_folder_name(), "models--user--bert-base");
-    /// ```
-    pub fn cache_folder_name(&self) -> String {
-        let prefix = self.repo_type.root_dir();
-        format!("{prefix}--{}", self.repo_id).replace('/', "--")
-    }
-
-    /// The revision
-    pub fn repo_id(&self) -> &str {
-        &self.repo_id
-    }
-
-    /// Returns a reference to the repository type of this model
-    pub fn repo_type(&self) -> &RepoType {
-        &self.repo_type
-    }
-
-    /// The revision
-    pub fn revision(&self) -> &str {
-        &self.revision
-    }
-
-    /// The actual URL part of the repo
-    pub fn url(&self) -> String {
-        match self.repo_type {
-            RepoType::Model => self.repo_id.to_string(),
-            RepoType::Dataset => {
-                format!("datasets/{}", self.repo_id)
-            }
-            RepoType::Space => {
-                format!("spaces/{}", self.repo_id)
-            }
+    /// Set the cache directory (defaults to CACHE_HOME environment variable)
+    pub fn cache_dir(mut self, cache_dir: impl Into<PathBuf>) -> Self {
+        self.cache_dir = Some(cache_dir.into());
+        if self.cache_dir.is_some() {
+            return self;
         }
-    }
-
-    /// Revision needs to be url escaped before being used in a URL
-    pub fn url_revision(&self) -> String {
-        self.revision.replace('/', "%2F")
-    }
-
-    /// Used to compute the repo's url part when accessing the metadata of the repo
-    pub fn api_url(&self) -> String {
-        let prefix = self.repo_type.root_dir();
-        format!("{prefix}/{}/revision/{}", self.repo_id, self.url_revision())
-    }
-}
-
-/// A local struct used to fetch information from the cache folder.
-#[derive(Clone, Debug)]
-pub struct Cache {
-    path: PathBuf,
-}
-
-impl Cache {
-    const PATH_PART_HUB: &str = "hub";
-    const PATH_PART_TOKEN: &str = "token";
-
-    /// Creates a new cache object location
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
-    }
-
-    /// Creates cache from environment variable CACHE_HOME (if defined) otherwise
-    /// defaults to [`home_dir`]/.cache/modelscope
-    pub fn from_env() -> Self {
-        match std::env::var(CACHE_HOME) {
-            Ok(home) => {
-                let mut path: PathBuf = home.into();
-                path.push(Self::PATH_PART_HUB);
-                Self::new(path)
-            }
-            Err(_) => Self::default(),
+        if let Ok(home) = std::env::var(CACHE_HOME) {
+            let mut path: PathBuf = home.into();
+            path.push("hub");
+            self.cache_dir = Some(path);
+        } else {
+            self.cache_dir = Some(Self::default_cache_dir());
         }
+        self
     }
 
-    /// Creates a new cache object location
-    pub fn path(&self) -> &PathBuf {
-        &self.path
-    }
-
-    /// Returns the location of the token file
-    pub fn token_path(&self) -> PathBuf {
-        let mut path = self.path.clone();
-        // Remove `"hub"`
-        path.pop();
-        path.push(Self::PATH_PART_TOKEN);
-        path
-    }
-
-    /// Returns the token value if it exists in the cache
-    /// Use `huggingface-cli login` to set it up.
-    pub fn token(&self) -> Option<String> {
-        let token_filename = self.token_path();
-        if token_filename.exists() {
-            log::info!("Using token file found {token_filename:?}");
-        }
-        match std::fs::read_to_string(token_filename) {
-            Ok(token_content) => {
-                let token_content = token_content.trim();
-                if token_content.is_empty() {
-                    None
-                } else {
-                    Some(token_content.to_string())
-                }
-            }
-            Err(_) => None,
-        }
-    }
-}
-
-impl Default for Cache {
-    fn default() -> Self {
+    fn default_cache_dir() -> PathBuf {
         let mut path = dirs::home_dir().expect("Home directory cannot be found");
         path.push(".cache");
         path.push("modelscope");
         path.push("hub");
-        Self::new(path)
+        path
+    }
+
+    /// Build the `Repo` instance
+    pub fn build(self) -> Result<Repo, OpsError> {
+        let repo_id = self
+            .repo_id
+            .ok_or(OpsError::BuildError("Repository ID is required".into()))?;
+        let repo_type = self
+            .repo_type
+            .ok_or(OpsError::BuildError("Repository type is required".into()))?;
+        let revision = self.revision.unwrap_or(Self::REVISION_MAIN.to_string());
+        let cache_dir = self.cache_dir.unwrap_or(Self::default_cache_dir());
+
+        Ok(Repo {
+            repo_id,
+            repo_type,
+            revision,
+            cache_dir,
+        })
     }
 }
 
-/// Shorthand for accessing things within a particular repo
-#[derive(Debug)]
-pub struct RepoCache {
-    repo: Repo,
-    cache: Cache,
+impl Default for RepoBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-/// A builder pattern struct for constructing a repository cache
+/// Defines operations that can be performed on a repository.
 ///
-/// This struct allows step-by-step construction of a repository cache
-/// by setting the repository and cache components separately.
-pub struct RepoCacheBuilder {
-    repo: Option<Repo>,
-    cache: Option<Cache>,
+/// This trait provides a common interface for interacting with model repositories,
+/// allowing different repository implementations to share the same API.
+pub trait RepoOps {
+    /// pull a repo
+    fn pull(&self);
+
+    /// push a repo
+    fn push(&self);
+
+    /// list files in repo
+    fn list(&self);
+
+    /// download a file
+    fn download(&self, filename: &str) -> Result<(), OpsError>;
+
+    /// Callback function that is invoked when a file download is requested
+    ///
+    /// # Arguments
+    ///
+    /// * `filename` - Name of the file to be downloaded
+    fn download_cb(&self, filename: &str, cb: impl FnMut(usize, usize));
+
+    /// upload a file
+    fn upload(&self, filename: &str);
+
+    /// delete a file
+    fn delete(&self, filename: &str);
+
+    /// check if a file exists
+    fn exists(&self, filename: &str) -> bool;
 }
 
-impl RepoCacheBuilder {
-    /// 创建一个新的 Builder
-    pub fn new() -> Self {
-        Self {
-            repo: None,
-            cache: None,
-        }
-    }
+#[async_trait]
+/// Repository operations trait for asynchronous file management
+///
+/// Provides async methods for common repository operations like:
+/// - Pulling/pushing changes
+/// - Listing files
+/// - Downloading/uploading files
+/// - Deleting files
+/// - Checking file existence
+///
+/// Implementations should handle the underlying repository storage details.
+pub trait RepoOpsAsync {
+    /// pull a repo
+    async fn pull(&self);
 
-    /// 设置 Repo
-    pub fn repo(mut self, repo: Repo) -> Self {
-        self.repo = Some(repo);
-        self
-    }
+    /// push a repo
+    async fn push(&self);
 
-    /// 设置 Cache
-    pub fn cache(mut self, cache: Cache) -> Self {
-        self.cache = Some(cache);
-        self
-    }
+    /// list files in repo
+    async fn list(&self);
 
-    /// 为模型设置 Repo
-    pub fn model(mut self, model_id: String) -> Self {
-        self.repo = Some(Repo::new(model_id, RepoType::Model));
-        self
-    }
+    /// download a file
+    async fn download(&self, filename: &str) -> Result<(), OpsError>;
 
-    /// 为数据集设置 Repo
-    pub fn dataset(mut self, dataset_id: String) -> Self {
-        self.repo = Some(Repo::new(dataset_id, RepoType::Dataset));
-        self
-    }
+    /// upload a file
+    async fn upload(&self, filename: &str);
 
-    /// 为空间设置 Repo
-    pub fn space(mut self, space_id: String) -> Self {
-        self.repo = Some(Repo::new(space_id, RepoType::Space));
-        self
-    }
+    /// delete a file
+    async fn delete(&self, filename: &str);
 
-    /// 构建 RepoCache
-    pub fn build(self) -> RepoCache {
-        RepoCache {
-            repo: self.repo.expect("Repo must be set"),
-            cache: self.cache.unwrap_or_default(),
-        }
-    }
+    /// check if a file exists
+    async fn exists(&self, filename: &str) -> bool;
 }
 
-impl RepoCache {
-    /// Creates a new `RepoCacheBuilder` instance to configure and build a repository cache.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `RepoCacheBuilder` that can be used to customize and construct a repository cache.
-    pub fn builder() -> RepoCacheBuilder {
-        RepoCacheBuilder::new()
-    }
+#[derive(Debug, Error)]
+/// All errors the API can throw
+pub enum OpsError {
+    /// We failed to acquire lock for file `f`. Meaning
+    /// Someone else is writing/downloading said file
+    #[error("Lock acquisition failed: {0}")]
+    LockAcquisition(PathBuf),
 
-    /// Returns the complete path to the repository's cache directory
-    ///
-    /// Constructs the full path by appending the repository's cache folder name
-    /// to the base cache path.
-    ///
-    /// # Returns
-    /// - [`PathBuf`] containing the absolute path to the repository cache directory
-    pub fn path(&self) -> PathBuf {
-        let mut cache_path = self.cache.path.clone();
-        cache_path.push(self.repo.cache_folder_name());
-        cache_path
-    }
+    #[error("build error {0}")]
+    BuildError(String),
+
+    /// I/O Error
+    #[error("I/O error {0}")]
+    IoError(#[from] std::io::Error),
+
+    /// request error
+    #[error("request error {0}")]
+    RequestError(#[from] reqwest::Error),
 }
