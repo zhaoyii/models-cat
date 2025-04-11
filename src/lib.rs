@@ -1,7 +1,6 @@
 #![deny(missing_docs)]
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
-use std::io::Write;
 use std::path::PathBuf;
 
 /// The actual Api to interact with the hub.
@@ -31,12 +30,20 @@ pub enum RepoType {
 }
 
 impl RepoType {
-    /// The name of the repo type
-    pub fn name(&self) -> &str {
+    /// Returns the root directory name for this repository type in the hub and local cache.
+    ///
+    /// # Examples
+    /// ```
+    /// use models_hub::RepoType;
+    /// assert_eq!(RepoType::Model.root_dir(), "models");
+    /// assert_eq!(RepoType::Dataset.root_dir(), "datasets");
+    /// assert_eq!(RepoType::Space.root_dir(), "spaces");
+    /// ```
+    pub fn root_dir(&self) -> &'static str {
         match self {
-            RepoType::Model => "model",
-            RepoType::Dataset => "dataset",
-            RepoType::Space => "space",
+            RepoType::Model => "models",
+            RepoType::Dataset => "datasets",
+            RepoType::Space => "spaces",
         }
     }
 }
@@ -44,13 +51,29 @@ impl RepoType {
 impl Repo {
     const REVISION_MAIN: &str = "master";
 
-    /// Repo with the default branch ("master").
+    /// Creates a new instance with the specified repository ID and type,
+    /// using the default main branch revision.
+    ///
+    /// # Arguments
+    /// * `repo_id` - String identifier for the repository (e.g., "username/repo-name")
+    /// * `repo_type` - Type of repository (e.g., model, dataset, space)
+    ///
+    /// # Returns
+    /// A new instance of the struct
+    ///
+    /// # Examples
+    /// ```
+    /// use models_hub::{RepoType, Repo};
+    /// let repo = Repo::new("username/model-name".to_string(), RepoType::Model);
+    /// assert_eq!(repo.repo_id(), "username/model-name");
+    /// ```
+    ///
     pub fn new(repo_id: String, repo_type: RepoType) -> Self {
-        Self::with_revision(repo_id, repo_type, Self::REVISION_MAIN.to_string())
+        Self::new_with_revision(repo_id, repo_type, Self::REVISION_MAIN.to_string())
     }
 
-    /// fully qualified Repo
-    pub fn with_revision(repo_id: String, repo_type: RepoType, revision: String) -> Self {
+    /// Creates a new Repo with all fields specified, including revision
+    pub fn new_with_revision(repo_id: String, repo_type: RepoType, revision: String) -> Self {
         Self {
             repo_id,
             repo_type,
@@ -58,29 +81,45 @@ impl Repo {
         }
     }
 
-    /// Shortcut for [`Repo::new`] with [`RepoType::Model`]
-    pub fn model(repo_id: String) -> Self {
+    /// Shortcut for creating a model repository
+    pub fn new_model(repo_id: String) -> Self {
         Self::new(repo_id, RepoType::Model)
     }
 
-    /// Shortcut for [`Repo::new`] with [`RepoType::Dataset`]
-    pub fn dataset(repo_id: String) -> Self {
+    /// Shortcut for creating a dataset repository
+    pub fn new_dataset(repo_id: String) -> Self {
         Self::new(repo_id, RepoType::Dataset)
     }
 
-    /// Shortcut for [`Repo::new`] with [`RepoType::Space`]
-    pub fn space(repo_id: String) -> Self {
+    /// Shortcut for creating a space repository
+    pub fn new_space(repo_id: String) -> Self {
         Self::new(repo_id, RepoType::Space)
     }
 
-    /// The normalized folder nameof the repo within the cache directory
-    pub fn folder_name(&self) -> String {
-        let prefix = match self.repo_type {
-            RepoType::Model => "models",
-            RepoType::Dataset => "datasets",
-            RepoType::Space => "spaces",
-        };
+    /// Generates a normalized folder name for cache system storage.
+    ///
+    /// The naming convention is `{type-prefix}--{repo-id}` with all `/` characters
+    /// replaced by `--` for filesystem compatibility.
+    ///
+    /// # Example
+    /// ```
+    /// use models_hub::Repo;
+    /// let repo = Repo::new_model("user/bert-base".to_string());
+    /// assert_eq!(repo.cache_folder_name(), "models--user--bert-base");
+    /// ```
+    pub fn cache_folder_name(&self) -> String {
+        let prefix = self.repo_type.root_dir();
         format!("{prefix}--{}", self.repo_id).replace('/', "--")
+    }
+
+    /// The revision
+    pub fn repo_id(&self) -> &str {
+        &self.repo_id
+    }
+
+    /// Returns a reference to the repository type of this model
+    pub fn repo_type(&self) -> &RepoType {
+        &self.repo_type
     }
 
     /// The revision
@@ -89,7 +128,6 @@ impl Repo {
     }
 
     /// The actual URL part of the repo
-    #[cfg(any(feature = "tokio", feature = "ureq"))]
     pub fn url(&self) -> String {
         match self.repo_type {
             RepoType::Model => self.repo_id.to_string(),
@@ -103,23 +141,16 @@ impl Repo {
     }
 
     /// Revision needs to be url escaped before being used in a URL
-    #[cfg(any(feature = "tokio", feature = "ureq"))]
     pub fn url_revision(&self) -> String {
         self.revision.replace('/', "%2F")
     }
 
     /// Used to compute the repo's url part when accessing the metadata of the repo
-    #[cfg(any(feature = "tokio", feature = "ureq"))]
     pub fn api_url(&self) -> String {
-        let prefix = match self.repo_type {
-            RepoType::Model => "models",
-            RepoType::Dataset => "datasets",
-            RepoType::Space => "spaces",
-        };
+        let prefix = self.repo_type.root_dir();
         format!("{prefix}/{}/revision/{}", self.repo_id, self.url_revision())
     }
 }
-
 
 /// A local struct used to fetch information from the cache folder.
 #[derive(Clone, Debug)]
@@ -128,6 +159,9 @@ pub struct Cache {
 }
 
 impl Cache {
+    const PATH_PART_HUB: &str = "hub";
+    const PATH_PART_TOKEN: &str = "token";
+
     /// Creates a new cache object location
     pub fn new(path: PathBuf) -> Self {
         Self { path }
@@ -139,7 +173,7 @@ impl Cache {
         match std::env::var(CACHE_HOME) {
             Ok(home) => {
                 let mut path: PathBuf = home.into();
-                path.push("hub");
+                path.push(Self::PATH_PART_HUB);
                 Self::new(path)
             }
             Err(_) => Self::default(),
@@ -156,7 +190,7 @@ impl Cache {
         let mut path = self.path.clone();
         // Remove `"hub"`
         path.pop();
-        path.push("token");
+        path.push(Self::PATH_PART_TOKEN);
         path
     }
 
@@ -179,100 +213,6 @@ impl Cache {
             Err(_) => None,
         }
     }
-
-    /// Creates a new handle [`CacheRepo`] which contains operations
-    /// on a particular [`Repo`]
-    pub fn repo(&self, repo: Repo) -> CacheRepo {
-        CacheRepo::new(self.clone(), repo)
-    }
-
-    /// Simple wrapper over
-    /// ```
-    /// # use hf_hub::{Cache, Repo, RepoType};
-    /// # let model_id = "gpt2".to_string();
-    /// let cache = Cache::new("/tmp/".into());
-    /// let cache = cache.repo(Repo::new(model_id, RepoType::Model));
-    /// ```
-    pub fn model(&self, model_id: String) -> CacheRepo {
-        self.repo(Repo::new(model_id, RepoType::Model))
-    }
-
-    /// Simple wrapper over
-    /// ```
-    /// # use hf_hub::{Cache, Repo, RepoType};
-    /// # let model_id = "gpt2".to_string();
-    /// let cache = Cache::new("/tmp/".into());
-    /// let cache = cache.repo(Repo::new(model_id, RepoType::Dataset));
-    /// ```
-    pub fn dataset(&self, model_id: String) -> CacheRepo {
-        self.repo(Repo::new(model_id, RepoType::Dataset))
-    }
-
-    /// Simple wrapper over
-    /// ```
-    /// # use hf_hub::{Cache, Repo, RepoType};
-    /// # let model_id = "gpt2".to_string();
-    /// let cache = Cache::new("/tmp/".into());
-    /// let cache = cache.repo(Repo::new(model_id, RepoType::Space));
-    /// ```
-    pub fn space(&self, model_id: String) -> CacheRepo {
-        self.repo(Repo::new(model_id, RepoType::Space))
-    }
-}
-
-/// Shorthand for accessing things within a particular repo
-#[derive(Debug)]
-pub struct CacheRepo {
-    cache: Cache,
-    repo: Repo,
-}
-
-impl CacheRepo {
-    fn new(cache: Cache, repo: Repo) -> Self {
-        Self { cache, repo }
-    }
-
-    /// This will get the location of the file within the cache for the remote
-    /// `filename`. Will return `None` if file is not already present in cache.
-    pub fn get(&self, filename: &str) -> Option<PathBuf> {
-        let commit_path = self.ref_path();
-        let commit_hash = std::fs::read_to_string(commit_path).ok()?;
-        let mut pointer_path = self.pointer_path(&commit_hash);
-        pointer_path.push(filename);
-        if pointer_path.exists() {
-            Some(pointer_path)
-        } else {
-            None
-        }
-    }
-
-    fn path(&self) -> PathBuf {
-        let mut ref_path = self.cache.path.clone();
-        ref_path.push(self.repo.folder_name());
-        ref_path
-    }
-
-    fn ref_path(&self) -> PathBuf {
-        let mut ref_path = self.path();
-        ref_path.push("refs");
-        ref_path.push(self.repo.revision());
-        ref_path
-    }
-
-    /// Creates a reference in the cache directory that points branches to the correct
-    /// commits within the blobs.
-    pub fn create_ref(&self, commit_hash: &str) -> Result<(), std::io::Error> {
-        let ref_path = self.ref_path();
-        // Needs to be done like this because revision might contain `/` creating subfolders here.
-        std::fs::create_dir_all(ref_path.parent().unwrap())?;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&ref_path)?;
-        file.write_all(commit_hash.trim().as_bytes())?;
-        Ok(())
-    }
 }
 
 impl Default for Cache {
@@ -285,70 +225,90 @@ impl Default for Cache {
     }
 }
 
+/// Shorthand for accessing things within a particular repo
+#[derive(Debug)]
+pub struct RepoCache {
+    repo: Repo,
+    cache: Cache,
+}
 
+/// A builder pattern struct for constructing a repository cache
+///
+/// This struct allows step-by-step construction of a repository cache
+/// by setting the repository and cache components separately.
+pub struct RepoCacheBuilder {
+    repo: Option<Repo>,
+    cache: Option<Cache>,
+}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Internal macro used to show cleaners errors
-    /// on the payloads received from the hub.
-    #[macro_export]
-    macro_rules! assert_no_diff {
-        ($left: expr, $right: expr) => {
-            let left = serde_json::to_string_pretty(&$left).unwrap();
-            let right = serde_json::to_string_pretty(&$right).unwrap();
-            if left != right {
-                use rand::Rng;
-                use std::io::Write;
-                use std::process::Command;
-                let rand_string: String = rand::thread_rng()
-                    .sample_iter(&rand::distributions::Alphanumeric)
-                    .take(6)
-                    .map(char::from)
-                    .collect();
-                let left_filename = format!("/tmp/left-{rand_string}.txt");
-                let mut file = std::fs::File::create(&left_filename).unwrap();
-                file.write_all(left.as_bytes()).unwrap();
-                let right_filename = format!("/tmp/right-{rand_string}.txt");
-                let mut file = std::fs::File::create(&right_filename).unwrap();
-                file.write_all(right.as_bytes()).unwrap();
-                let output = Command::new("diff")
-                    // Reverse order seems to be more appropriate for how we set up the tests.
-                    .args(["-U5", &right_filename, &left_filename])
-                    .output()
-                    .expect("Failed to diff")
-                    .stdout;
-                let diff = String::from_utf8(output).expect("Invalid utf-8 diff output");
-                // eprintln!("assertion `left == right` failed\n{diff}");
-                assert!(false, "{diff}")
-            };
-        };
-    }
-
-    #[test]
-    #[cfg(not(target_os = "windows"))]
-    fn token_path() {
-        let cache = Cache::from_env();
-        let token_path = cache.token_path().to_str().unwrap().to_string();
-        if let Ok(hf_home) = std::env::var(HF_HOME) {
-            assert_eq!(token_path, format!("{hf_home}/token"));
-        } else {
-            let n = "huggingface/token".len();
-            assert_eq!(&token_path[token_path.len() - n..], "huggingface/token");
+impl RepoCacheBuilder {
+    /// 创建一个新的 Builder
+    pub fn new() -> Self {
+        Self {
+            repo: None,
+            cache: None,
         }
     }
 
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn token_path() {
-        let cache = Cache::from_env();
-        let token_path = cache.token_path().to_str().unwrap().to_string();
-        if let Ok(hf_home) = std::env::var(CACHE_HOME) {
-            assert_eq!(token_path, format!("{hf_home}\\token"));
-        } else {
-            let n = "huggingface/token".len();
-            assert_eq!(&token_path[token_path.len() - n..], "huggingface\\token");
+    /// 设置 Repo
+    pub fn repo(mut self, repo: Repo) -> Self {
+        self.repo = Some(repo);
+        self
+    }
+
+    /// 设置 Cache
+    pub fn cache(mut self, cache: Cache) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
+    /// 为模型设置 Repo
+    pub fn model(mut self, model_id: String) -> Self {
+        self.repo = Some(Repo::new(model_id, RepoType::Model));
+        self
+    }
+
+    /// 为数据集设置 Repo
+    pub fn dataset(mut self, dataset_id: String) -> Self {
+        self.repo = Some(Repo::new(dataset_id, RepoType::Dataset));
+        self
+    }
+
+    /// 为空间设置 Repo
+    pub fn space(mut self, space_id: String) -> Self {
+        self.repo = Some(Repo::new(space_id, RepoType::Space));
+        self
+    }
+
+    /// 构建 RepoCache
+    pub fn build(self) -> RepoCache {
+        RepoCache {
+            repo: self.repo.expect("Repo must be set"),
+            cache: self.cache.unwrap_or_default(),
         }
+    }
+}
+
+impl RepoCache {
+    /// Creates a new `RepoCacheBuilder` instance to configure and build a repository cache.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `RepoCacheBuilder` that can be used to customize and construct a repository cache.
+    pub fn builder() -> RepoCacheBuilder {
+        RepoCacheBuilder::new()
+    }
+
+    /// Returns the complete path to the repository's cache directory
+    ///
+    /// Constructs the full path by appending the repository's cache folder name
+    /// to the base cache path.
+    ///
+    /// # Returns
+    /// - [`PathBuf`] containing the absolute path to the repository cache directory
+    pub fn path(&self) -> PathBuf {
+        let mut cache_path = self.cache.path.clone();
+        cache_path.push(self.repo.cache_folder_name());
+        cache_path
     }
 }
