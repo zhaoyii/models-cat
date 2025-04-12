@@ -71,7 +71,7 @@ impl Repo {
 
     /// Create a new `Repo` instance
     pub fn cache_dir(&self) -> PathBuf {
-        let prefix = self.repo_type.root_dir();
+        let prefix = self.repo_type.to_path_part();
         let mut path = self.cache_dir.clone();
         path.push(prefix);
         path.push(format!("{prefix}--{}", self.repo_id).replace('/', "--"));
@@ -80,13 +80,13 @@ impl Repo {
 
     /// Get the URL path for this repo
     pub fn url_path(&self) -> String {
-        let prefix = self.repo_type.root_dir();
+        let prefix = self.repo_type.to_path_part();
         format!("{prefix}/{}", self.repo_id)
     }
 
     /// Get the URL path for this repo with revision
     pub fn url_path_with_revision(&self) -> String {
-        let prefix = self.repo_type.root_dir();
+        let prefix = self.repo_type.to_path_part();
         format!(
             "{prefix}/{}/revision/{}",
             self.repo_id,
@@ -95,7 +95,7 @@ impl Repo {
     }
 
     pub fn url_path_with_resolve(&self) -> String {
-        let prefix = self.repo_type.root_dir();
+        let prefix = self.repo_type.to_path_part();
         format!(
             "{prefix}/{}/resolve/{}",
             self.repo_id,
@@ -162,7 +162,7 @@ impl RepoType {
     /// assert_eq!(RepoType::Dataset.root_dir(), "datasets");
     /// assert_eq!(RepoType::Space.root_dir(), "spaces");
     /// ```
-    pub fn root_dir(&self) -> &'static str {
+    pub fn to_path_part(&self) -> &'static str {
         match self {
             RepoType::Model => "models",
             RepoType::Dataset => "datasets",
@@ -286,16 +286,36 @@ pub trait RepoOps {
     fn download_with_progress(
         &self,
         filename: &str,
-        progress: &mut impl ProgressHandler,
+        progress: &mut impl Progress,
     ) -> Result<(), crate::OpsError>;
 }
 
+#[derive(Default, Clone)]
+pub struct ProgressUnit {
+    filename: String,
+    total_size: u64,
+    current: u64,
+}
+
+impl ProgressUnit {
+    pub fn new(filename: String, total_size: u64) -> Self {
+        Self {
+            filename,
+            total_size,
+            ..Default::default()
+        }
+    }
+
+    pub fn update(&mut self, current: u64) {
+        self.current = current;
+    }
+}
 /// 通用进度处理接口
-pub trait ProgressHandler {
-    fn on_start(&mut self, total_size: u64);
+pub trait Progress {
+    fn on_start(&mut self, unit: &ProgressUnit);
     /// 进度更新时触发
     /// current: 已完成工作量（如已传输字节数）
-    fn on_progress(&mut self, current: u64);
+    fn on_progress(&mut self, unit: &ProgressUnit);
 }
 
 #[async_trait]

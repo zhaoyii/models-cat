@@ -1,8 +1,8 @@
 use crate::utils::BLOCKING_CLIENT;
-use crate::{OpsError, ProgressHandler, Repo, RepoOps, fslock};
+use crate::{OpsError, Progress, ProgressUnit, Repo, RepoOps, fslock};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use std::fmt;
 use std::io::{Read, Write};
-use std::{cmp::min, fmt::Write as FmtWrite};
 use tempfile::NamedTempFile;
 
 pub struct ModelsCat {
@@ -101,7 +101,7 @@ impl RepoOps for ModelsCat {
     fn download_with_progress(
         &self,
         filename: &str,
-        progress: &mut impl ProgressHandler,
+        progress: &mut impl Progress,
     ) -> Result<(), crate::OpsError> {
         let url = format!(
             "{}/{}/{}",
@@ -116,12 +116,14 @@ impl RepoOps for ModelsCat {
         {
             let response = BLOCKING_CLIENT.get(&url).send()?;
             let total_size = response.content_length().unwrap_or(0);
-            progress.on_start(total_size);
+            let mut unt = ProgressUnit::new(filename.to_string(), total_size);
+            progress.on_start(&unt);
             let mut downloaded: u64 = 0;
             let mut file = temp_file.reopen()?;
             let mut response_reader = response;
             // 8KB缓冲区平衡性能与更新频率
             let mut chunk = vec![0u8; 8192];
+
             loop {
                 let bytes_read = response_reader.read(&mut chunk)?;
                 if bytes_read == 0 {
@@ -129,7 +131,8 @@ impl RepoOps for ModelsCat {
                 }
                 file.write_all(&chunk[..bytes_read])?;
                 downloaded += bytes_read as u64;
-                progress.on_progress(downloaded);
+                unt.update(downloaded);
+                progress.on_progress(&unt);
             }
         }
         let target_path = cache_dir.join(filename);
@@ -141,33 +144,23 @@ impl RepoOps for ModelsCat {
     }
 }
 
-struct ProgressBarWrapper {
-    total_size: u64,
-    progress_bar: Option<ProgressBar>,
-}
+#[derive(Default)]
+struct ProgressBarWrapper(Option<ProgressBar>);
 
-impl ProgressBarWrapper {
-    fn new() -> Self {
-        Self {
-            total_size: 0,
-            progress_bar: None,
-        }
-    }
-}
-
-impl ProgressHandler for ProgressBarWrapper {
-    fn on_start(&mut self, total_size: u64) {
-        self.total_size = total_size;
-        let pb = ProgressBar::new(total_size);
-        pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+impl Progress for ProgressBarWrapper {
+    fn on_start(&mut self, unit: &ProgressUnit) {
+        let pb = ProgressBar::new(unit.total_size);
+        let filename = unit.filename.clone();
+        pb.set_style(ProgressStyle::with_template("{prefix:.bold.cyan} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
             .unwrap()
-            .with_key("eta", |state: &ProgressState, w: &mut dyn FmtWrite| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
+            .with_key("eta", |state: &ProgressState, w: &mut dyn fmt::Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
             .progress_chars("#>-"));
-        self.progress_bar = Some(pb);
+        pb.set_prefix(filename);
+        self.0 = Some(pb);
     }
-    fn on_progress(&mut self, current: u64) {
-        let current = min(current, self.total_size);
-        self.progress_bar.as_mut().unwrap().set_position(current);
+
+    fn on_progress(&mut self, unit: &ProgressUnit) {
+        self.0.as_mut().unwrap().set_position(unit.current);
     }
 }
 
@@ -178,19 +171,19 @@ mod tests {
     #[test]
     fn test_download() {
         let hub = ModelsCat::builder()
-            .repo(Repo::new_model("BAAI/bge-large-zh-v1.5".to_string()))
+            .repo(Repo::new_model("BAAI/bge-small-zh-v1.5".to_string()))
             .build()
             .unwrap();
-        hub.download("pytorch_model.bin").unwrap();
+        hub.download("model.safetensors").unwrap();
     }
 
     #[test]
     fn download_with_progress() {
         let hub = ModelsCat::builder()
-            .repo(Repo::new_model("BAAI/bge-large-zh-v1.5".to_string()))
+            .repo(Repo::new_model("BAAI/bge-small-zh-v1.5".to_string()))
             .build()
             .unwrap();
-        hub.download_with_progress("pytorch_model.bin", &mut ProgressBarWrapper::new())
+        hub.download_with_progress("model.safetensors", &mut ProgressBarWrapper::default())
             .unwrap();
     }
 }
