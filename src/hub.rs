@@ -1,7 +1,11 @@
-use crate::utils::BLOCKING_CLIENT;
-use crate::{OpsError, Progress, ProgressUnit, Repo, RepoOps, fslock};
+use crate::fslock;
+use crate::ms_hub;
+use crate::repo;
+use crate::repo::{Progress, ProgressUnit, Repo, RepoOps};
+use crate::utils::{self, BLOCKING_CLIENT, OpsError};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::fmt;
+use std::fs::exists;
 use std::io::{Read, Write};
 use tempfile::NamedTempFile;
 
@@ -54,41 +58,55 @@ impl ModelsCatBuilder {
 
 impl RepoOps for ModelsCat {
     /// pull a repo
-    fn pull(&self) {
+    fn pull(&self) -> Result<(), OpsError> {
         unimplemented!()
     }
 
-    /// push a repo
-    fn push(&self) {
-        unimplemented!()
-    }
-
-    /// list repos
-    fn list(&self) {
+    fn pull_with_progress(
+        &self,
+        filenames: &[String],
+        progress: &mut impl Progress,
+    ) -> Result<(), OpsError> {
         unimplemented!()
     }
 
     /// download a file
-    fn download(&self, filename: &str) -> Result<(), crate::OpsError> {
-        let url = format!(
-            "{}/{}/{}",
-            self.endpoint,
-            self.repo.url_path_with_resolve(),
-            filename
-        );
-        let cache_dir = self.repo.cache_dir();
-        std::fs::create_dir_all(cache_dir.clone())?;
-        let mut lock = fslock::FsLock::lock(cache_dir.clone())?;
-        let temp_file = NamedTempFile::new_in(&cache_dir)?;
+    fn download(&self, filename: &str) -> Result<(), OpsError> {
+        let repo_files = ms_hub::get_repo_files(&self.repo)?;
+        let fileinfo = repo_files.get_file_info(filename)?;
+        let hub_revision = fileinfo.revision.clone();
+        let snapshot_path = self.repo.snapshot_path(&hub_revision);
+        std::fs::create_dir_all(snapshot_path.clone())?;
+        let mut lock = fslock::FsLock::lock(snapshot_path.clone())?;
+
+        let target_path = snapshot_path.join(filename);
+        if std::fs::exists(&target_path)? {
+            if let Some(ref file_sha256) = fileinfo.sha256 {
+                if &utils::sha256(&target_path)? == file_sha256 {
+                    self.repo.create_ref(&hub_revision)?;
+                    lock.unlock();
+                    return Ok(());
+                }
+            }
+        }
+
+        let temp_file = NamedTempFile::new_in(&snapshot_path)?;
         {
+            let url = format!(
+                "{}/{}/{}",
+                self.endpoint,
+                self.repo.url_path_with_resolve(),
+                filename
+            );
             let mut response = BLOCKING_CLIENT.get(&url).send()?;
             let mut file = temp_file.reopen()?;
             std::io::copy(&mut response, &mut file)?;
         }
-        let target_path = cache_dir.join(filename);
         temp_file
             .persist(&target_path)
-            .map_err(|e| crate::OpsError::IoError(e.error))?;
+            .map_err(|e| OpsError::IoError(e.error))?;
+        self.repo.create_ref(&hub_revision)?;
+
         lock.unlock();
         Ok(())
     }
@@ -102,18 +120,33 @@ impl RepoOps for ModelsCat {
         &self,
         filename: &str,
         progress: &mut impl Progress,
-    ) -> Result<(), crate::OpsError> {
-        let url = format!(
-            "{}/{}/{}",
-            self.endpoint,
-            self.repo.url_path_with_resolve(),
-            filename
-        );
-        let cache_dir = self.repo.cache_dir();
-        std::fs::create_dir_all(cache_dir.clone())?;
-        let mut lock = fslock::FsLock::lock(cache_dir.clone())?;
-        let temp_file = NamedTempFile::new_in(&cache_dir)?;
+    ) -> Result<(), OpsError> {
+        let repo_files = ms_hub::get_repo_files(&self.repo)?;
+        let fileinfo = repo_files.get_file_info(filename)?;
+        let hub_revision = fileinfo.revision.clone();
+        let snapshot_path = self.repo.snapshot_path(&hub_revision);
+        std::fs::create_dir_all(snapshot_path.clone())?;
+        let mut lock = fslock::FsLock::lock(snapshot_path.clone())?;
+
+        let target_path = snapshot_path.join(filename);
+        if std::fs::exists(&target_path)? {
+            if let Some(ref file_sha256) = fileinfo.sha256 {
+                if &utils::sha256(&target_path)? == file_sha256 {
+                    self.repo.create_ref(&hub_revision)?;
+                    lock.unlock();
+                    return Ok(());
+                }
+            }
+        }
+
+        let temp_file = NamedTempFile::new_in(&snapshot_path)?;
         {
+            let url = format!(
+                "{}/{}/{}",
+                self.endpoint,
+                self.repo.url_path_with_resolve(),
+                filename
+            );
             let response = BLOCKING_CLIENT.get(&url).send()?;
             let total_size = response.content_length().unwrap_or(0);
             let mut unt = ProgressUnit::new(filename.to_string(), total_size);
@@ -135,12 +168,31 @@ impl RepoOps for ModelsCat {
                 progress.on_progress(&unt);
             }
         }
-        let target_path = cache_dir.join(filename);
+
+        let target_path = snapshot_path.join(filename);
         temp_file
             .persist(&target_path)
-            .map_err(|e| crate::OpsError::IoError(e.error))?;
+            .map_err(|e| OpsError::IoError(e.error))?;
+        self.repo.create_ref(&hub_revision)?;
         lock.unlock();
         Ok(())
+    }
+
+    /// list hub files in the repo
+    fn list_hub_files(&self) -> Result<Vec<String>, OpsError> {
+        unimplemented!()
+    }
+
+    fn list_local_files(&self) -> Result<Vec<String>, OpsError> {
+        unimplemented!()
+    }
+
+    fn remove_all(&self) -> Result<Vec<String>, OpsError> {
+        unimplemented!()
+    }
+
+    fn remove(&self, filename: &str) -> Result<(), OpsError> {
+        unimplemented!()
     }
 }
 
@@ -149,8 +201,8 @@ struct ProgressBarWrapper(Option<ProgressBar>);
 
 impl Progress for ProgressBarWrapper {
     fn on_start(&mut self, unit: &ProgressUnit) {
-        let pb = ProgressBar::new(unit.total_size);
-        let filename = unit.filename.clone();
+        let pb = ProgressBar::new(unit.total_size());
+        let filename = unit.filename().to_string();
         pb.set_style(ProgressStyle::with_template("{prefix:.bold.cyan} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
             .unwrap()
             .with_key("eta", |state: &ProgressState, w: &mut dyn fmt::Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
@@ -160,7 +212,7 @@ impl Progress for ProgressBarWrapper {
     }
 
     fn on_progress(&mut self, unit: &ProgressUnit) {
-        self.0.as_mut().unwrap().set_position(unit.current);
+        self.0.as_mut().unwrap().set_position(unit.current());
     }
 }
 

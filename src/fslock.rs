@@ -1,6 +1,6 @@
 //! 一个简单的文件锁实现，用于防止多个进程同时访问同一个文件
 
-use crate::OpsError;
+use crate::utils::OpsError;
 use std::fs::File;
 use std::path::PathBuf;
 

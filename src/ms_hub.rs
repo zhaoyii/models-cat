@@ -7,8 +7,9 @@
 //! ```
 //!
 
+use crate::repo::{Repo, RepoType};
 use crate::utils::BLOCKING_CLIENT;
-use crate::{Repo, RepoType};
+use crate::utils::OpsError;
 use reqwest::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -143,6 +144,17 @@ pub struct ApiResponse {
     pub total_count: Option<i32>,
 }
 
+impl ApiResponse {
+    pub fn get_file_info(&self, filename: &str) -> Result<&FileInfo, OpsError> {
+        for f in self.data.files.iter() {
+            if f.path == filename {
+                return Ok(f);
+            }
+        }
+        Err(OpsError::HubError("file not found".to_string()))
+    }
+}
+
 fn default_success() -> bool {
     true
 }
@@ -240,6 +252,28 @@ mod tests {
                 assert_eq!(response.code, 200);
                 assert!(response.success);
                 assert!(!response.data.files.is_empty());
+            }
+            Err(e) => {
+                println!("Error: {}", e);
+                panic!("{}", format!("Error: {}", e));
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_commit_hash() {
+        let result = get_repo_files(&Repo::new_model("BAAI/bge-large-zh-v1.5".into()));
+
+        match result {
+            Ok(response) => {
+                assert_eq!(response.code, 200);
+                assert!(response.success);
+                assert!(!response.data.files.is_empty());
+                assert!(response.get_file_info("pytorch_model.bin").is_ok());
+                assert_eq!(
+                    response.get_file_info("pytorch_model.bin").unwrap().revision,
+                    "0eb9b7ea153ea2bccae07f974c91d13cfac53b06"
+                )
             }
             Err(e) => {
                 println!("Error: {}", e);
