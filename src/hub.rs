@@ -3,7 +3,7 @@ use crate::ms_hub;
 use crate::repo;
 use crate::repo::{Progress, ProgressUnit, Repo, RepoOps};
 use crate::utils::{self, BLOCKING_CLIENT, OpsError};
-use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 use std::fmt;
 use std::fs::exists;
 use std::io::{Read, Write};
@@ -62,12 +62,69 @@ impl RepoOps for ModelsCat {
         unimplemented!()
     }
 
-    fn pull_with_progress(
-        &self,
-        filenames: &[String],
-        progress: &mut impl Progress,
-    ) -> Result<(), OpsError> {
-        unimplemented!()
+    fn pull_with_progress(&self, progress: &mut impl Progress) -> Result<(), OpsError> {
+        let repo_files = ms_hub::get_repo_files(&self.repo)?;
+        let blobs = repo_files
+            .data
+            .files
+            .iter()
+            .filter(|f| f.file_type == "blob");
+        for fileinfo in blobs {
+            let hub_revision = fileinfo.revision.clone();
+            let mut snapshot_path = self.repo.snapshot_path(&hub_revision);
+            for part in fileinfo.path.split("/") {
+                snapshot_path.push(part);
+            }
+            let target_path = snapshot_path.clone();
+            snapshot_path.pop();
+            std::fs::create_dir_all(snapshot_path.clone())?;
+            let mut lock = fslock::FsLock::lock(snapshot_path.clone())?;
+            if std::fs::exists(&target_path)? {
+                if let Some(ref file_sha256) = fileinfo.sha256 {
+                    if &utils::sha256(&target_path)? == file_sha256 {
+                        self.repo.create_ref(&hub_revision)?;
+                        continue;
+                    }
+                }
+            }
+
+            let temp_file = NamedTempFile::new_in(&snapshot_path)?;
+            {
+                let url = format!(
+                    "{}/{}/{}",
+                    self.endpoint,
+                    self.repo.url_path_with_resolve(),
+                    fileinfo.path.clone()
+                );
+                let response = BLOCKING_CLIENT.get(&url).send()?;
+                let total_size = response.content_length().unwrap_or(0);
+                let mut unt = ProgressUnit::new(fileinfo.path.clone(), total_size);
+                progress.on_start(&unt);
+                let mut downloaded: u64 = 0;
+                let mut file = temp_file.reopen()?;
+                let mut response_reader = response;
+                // 8KB缓冲区平衡性能与更新频率
+                let mut chunk = vec![0u8; 8192];
+
+                loop {
+                    let bytes_read = response_reader.read(&mut chunk)?;
+                    if bytes_read == 0 {
+                        break;
+                    }
+                    file.write_all(&chunk[..bytes_read])?;
+                    downloaded += bytes_read as u64;
+                    unt.update(downloaded);
+                    progress.on_progress(&unt);
+                }
+            }
+            temp_file
+                .persist(&target_path)
+                .map_err(|e| OpsError::IoError(e.error))?;
+            self.repo.create_ref(&hub_revision)?;
+            lock.unlock();
+        }
+
+        Ok(())
     }
 
     /// download a file
@@ -196,7 +253,7 @@ impl RepoOps for ModelsCat {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct ProgressBarWrapper(Option<ProgressBar>);
 
 impl Progress for ProgressBarWrapper {
@@ -216,6 +273,40 @@ impl Progress for ProgressBarWrapper {
     }
 }
 
+#[derive(Default, Clone)]
+struct MultiProgressWrapper {
+    current_bar: Option<ProgressBar>,
+    inner: MultiProgress,
+}
+
+impl MultiProgressWrapper {
+    fn new() -> Self {
+        Self {
+            current_bar: None,
+            inner: MultiProgress::new(),
+        }
+    }
+}
+
+impl Progress for MultiProgressWrapper {
+    fn on_start(&mut self, unit: &ProgressUnit) {
+        let pb = ProgressBar::new(unit.total_size());
+        let filename = unit.filename().to_string();
+        pb.set_style(ProgressStyle::with_template("{prefix:.bold.cyan} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+            .unwrap()
+            .with_key("eta", |state: &ProgressState, w: &mut dyn fmt::Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
+            .progress_chars("#>-"));
+        pb.set_prefix(filename);
+        self.current_bar = Some(self.inner.add(pb));
+    }
+
+    fn on_progress(&mut self, unit: &ProgressUnit) {
+        if let Some(ref pb) = self.current_bar {
+            pb.set_position(unit.current());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,12 +321,22 @@ mod tests {
     }
 
     #[test]
-    fn download_with_progress() {
+    fn test_download_with_progress() {
         let hub = ModelsCat::builder()
             .repo(Repo::new_model("BAAI/bge-small-zh-v1.5".to_string()))
             .build()
             .unwrap();
         hub.download_with_progress("model.safetensors", &mut ProgressBarWrapper::default())
+            .unwrap();
+    }
+
+    #[test]
+    fn test_pull_with_progress() {
+        let hub = ModelsCat::builder()
+            .repo(Repo::new_model("BAAI/bge-small-zh-v1.5".to_string()))
+            .build()
+            .unwrap();
+        hub.pull_with_progress(&mut ProgressBarWrapper::default())
             .unwrap();
     }
 }

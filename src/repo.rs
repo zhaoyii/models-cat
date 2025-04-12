@@ -263,7 +263,6 @@ pub trait RepoOps {
 
     fn pull_with_progress(
         &self,
-        filenames: &[String],
         progress: &mut impl Progress,
     ) -> Result<(), OpsError>;
 
@@ -324,7 +323,7 @@ impl ProgressUnit {
     }
 }
 /// 通用进度处理接口
-pub trait Progress {
+pub trait Progress: Clone {
     fn on_start(&mut self, unit: &ProgressUnit);
     /// 进度更新时触发
     /// current: 已完成工作量（如已传输字节数）
