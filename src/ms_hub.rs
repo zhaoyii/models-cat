@@ -159,6 +159,17 @@ fn default_success() -> bool {
     true
 }
 
+pub fn get_blob_files(repo: &Repo) -> Result<Vec<FileInfo>, Error> {
+    let repo_files = get_repo_files(repo)?;
+    let blobs = repo_files
+        .data
+        .files
+        .into_iter()
+        .filter(|f| f.file_type == "blob")
+        .collect();
+    Ok(blobs)
+}
+
 pub fn get_repo_files(repo: &Repo) -> Result<ApiResponse, Error> {
     match repo.repo_type() {
         RepoType::Model => get_model_files(repo),
@@ -271,7 +282,10 @@ mod tests {
                 assert!(!response.data.files.is_empty());
                 assert!(response.get_file_info("pytorch_model.bin").is_ok());
                 assert_eq!(
-                    response.get_file_info("pytorch_model.bin").unwrap().revision,
+                    response
+                        .get_file_info("pytorch_model.bin")
+                        .unwrap()
+                        .revision,
                     "0eb9b7ea153ea2bccae07f974c91d13cfac53b06"
                 )
             }

@@ -6,7 +6,8 @@ use crate::utils::{self, BLOCKING_CLIENT, OpsError};
 use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 use std::fmt;
 use std::fs::exists;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
+use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
 pub struct ModelsCat {
@@ -131,6 +132,7 @@ impl RepoOps for ModelsCat {
     fn download(&self, filename: &str) -> Result<(), OpsError> {
         let repo_files = ms_hub::get_repo_files(&self.repo)?;
         let fileinfo = repo_files.get_file_info(filename)?;
+
         let hub_revision = fileinfo.revision.clone();
         let snapshot_path = self.repo.snapshot_path(&hub_revision);
         std::fs::create_dir_all(snapshot_path.clone())?;
@@ -181,56 +183,38 @@ impl RepoOps for ModelsCat {
         let repo_files = ms_hub::get_repo_files(&self.repo)?;
         let fileinfo = repo_files.get_file_info(filename)?;
         let hub_revision = fileinfo.revision.clone();
+
         let snapshot_path = self.repo.snapshot_path(&hub_revision);
-        std::fs::create_dir_all(snapshot_path.clone())?;
+        std::fs::create_dir_all(&snapshot_path)?;
+        let filepath = {
+            let mut filepath = snapshot_path.clone();
+            for part in fileinfo.path.split("/") {
+                filepath.push(part);
+            }
+            filepath
+        };
+
         let mut lock = fslock::FsLock::lock(snapshot_path.clone())?;
 
-        let target_path = snapshot_path.join(filename);
-        if std::fs::exists(&target_path)? {
+        if std::fs::exists(&filepath)? {
             if let Some(ref file_sha256) = fileinfo.sha256 {
-                if &utils::sha256(&target_path)? == file_sha256 {
+                if &utils::sha256(&filepath)? == file_sha256 {
                     self.repo.create_ref(&hub_revision)?;
                     lock.unlock();
                     return Ok(());
                 }
             }
         }
+        let file_url = format!(
+            "{}/{}/{}",
+            self.endpoint,
+            self.repo.url_path_with_resolve(),
+            filename
+        );
 
-        let temp_file = NamedTempFile::new_in(&snapshot_path)?;
-        {
-            let url = format!(
-                "{}/{}/{}",
-                self.endpoint,
-                self.repo.url_path_with_resolve(),
-                filename
-            );
-            let response = BLOCKING_CLIENT.get(&url).send()?;
-            let total_size = response.content_length().unwrap_or(0);
-            let mut unt = ProgressUnit::new(filename.to_string(), total_size);
-            progress.on_start(&unt);
-            let mut downloaded: u64 = 0;
-            let mut file = temp_file.reopen()?;
-            let mut response_reader = response;
-            // 8KB缓冲区平衡性能与更新频率
-            let mut chunk = vec![0u8; 8192];
-
-            loop {
-                let bytes_read = response_reader.read(&mut chunk)?;
-                if bytes_read == 0 {
-                    break;
-                }
-                file.write_all(&chunk[..bytes_read])?;
-                downloaded += bytes_read as u64;
-                unt.update(downloaded);
-                progress.on_progress(&unt);
-            }
-        }
-
-        let target_path = snapshot_path.join(filename);
-        temp_file
-            .persist(&target_path)
-            .map_err(|e| OpsError::IoError(e.error))?;
+        download_file_wtih_progress(&file_url, &filepath, &mut Some(progress))?;
         self.repo.create_ref(&hub_revision)?;
+
         lock.unlock();
         Ok(())
     }
@@ -251,6 +235,71 @@ impl RepoOps for ModelsCat {
     fn remove(&self, filename: &str) -> Result<(), OpsError> {
         unimplemented!()
     }
+}
+
+/// Downloads a file from a URL with progress tracking.
+///
+/// # Arguments
+///
+/// * `file_url` - The URL of the file to download
+/// * `filepath` - The destination path where the file will be saved
+/// * `progress` - Optional progress tracker implementing the `Progress` trait
+///
+/// Use BufReader and BufWriter to efficiently read and write the file in chunks.
+fn download_file_wtih_progress(
+    file_url: &str,
+    filepath: &PathBuf,
+    progress: &mut Option<&mut impl Progress>,
+) -> Result<(), OpsError> {
+    let filename = filepath
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or(OpsError::HubError("filename is not utf8".into()))?;
+    let parent = filepath
+        .parent() // 直接获取父目录
+        .ok_or_else(|| OpsError::HubError("Invalid file path".into()))?;
+    let temp_file = NamedTempFile::new_in(&parent)?;
+
+    let response = BLOCKING_CLIENT.get(file_url).send()?;
+    let total_size = if let Some(content_length) = response.content_length() {
+        content_length
+    } else {
+        return Err(OpsError::HubError("content_length is not available".into()));
+    };
+
+    let mut unt = if let Some(pg) = progress.as_mut() {
+        let unt = ProgressUnit::new(filename.to_string(), total_size);
+        pg.on_start(&unt);
+        Some(unt)
+    } else {
+        None
+    };
+
+    let mut downloaded: u64 = 0;
+    let mut buf_write = io::BufWriter::new(temp_file.reopen()?);
+    let mut buf_read = io::BufReader::new(response);
+    let mut buf = vec![0u8; 8192];
+
+    loop {
+        let len = buf_read.read(&mut buf)?;
+        if len == 0 {
+            break;
+        }
+        buf_write.write_all(&buf[..len])?;
+        downloaded += len as u64;
+
+        if let Some(pg) = progress.as_mut() {
+            if let Some(unt) = unt.as_mut() {
+                unt.update(downloaded);
+                pg.on_progress(unt);
+            }
+        }
+    }
+
+    temp_file
+        .persist(filepath)
+        .map_err(|e| OpsError::IoError(e.error))?;
+    Ok(())
 }
 
 #[derive(Default, Clone)]
