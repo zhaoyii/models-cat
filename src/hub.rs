@@ -217,7 +217,7 @@ fn download_file(
         .map_err(|e| OpsError::IoError(e.error))?;
 
     if let Some(prg) = progress.as_mut() {
-        prg.on_progress(&unit)?;
+        prg.on_finish(&unit)?;
     }
     Ok(())
 }
