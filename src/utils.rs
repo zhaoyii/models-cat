@@ -26,6 +26,9 @@ pub enum OpsError {
     /// request error
     #[error("Request error {0}")]
     RequestError(#[from] reqwest::Error),
+
+    #[error("Request error {0}")]
+    TempfileError(#[from] async_tempfile::Error),
 }
 
 /// A static HTTP client for making blocking requests.
@@ -40,7 +43,6 @@ pub(crate) static BLOCKING_CLIENT: LazyLock<blocking::Client> = LazyLock::new(||
         .build()
         .expect("Failed to build reqwest client")
 });
-
 
 pub(crate) static ASYNC_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()

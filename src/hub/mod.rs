@@ -1,5 +1,8 @@
+mod ms_hub;
+mod async_hub;
+
 use crate::fslock;
-use crate::ms_hub::synchronous;
+use ms_hub::synchronous;
 use crate::repo::Repo;
 use crate::utils::{self, BLOCKING_CLIENT, OpsError};
 use indicatif::{

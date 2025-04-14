@@ -2,7 +2,6 @@
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
 mod fslock;
-mod ms_hub;
 
 pub mod hub;
 pub mod repo;
