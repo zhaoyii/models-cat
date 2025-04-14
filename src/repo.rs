@@ -1,9 +1,13 @@
-use crate::utils::OpsError;
-use async_trait::async_trait;
 use std::io::Write;
 use std::path::PathBuf;
 
-const CACHE_HOME: &str = "MODELS_CACHE_HOME";
+fn default_cache_dir() -> PathBuf {
+    let mut path = dirs::home_dir().expect("Home directory cannot be found");
+    path.push(".cache");
+    path.push("modelscope");
+    path.push("hub");
+    path
+}
 
 /// The representation of a repo on the hub.
 #[derive(Clone, Debug)]
@@ -15,33 +19,35 @@ pub struct Repo {
 }
 
 impl Repo {
-    /// Create a new builder for constructing a `Repo`
-    pub fn builder() -> RepoBuilder {
-        RepoBuilder::new()
+    const REVISION_MAIN: &str = "master";
+
+    pub fn new(repo_id: &str, repo_type: RepoType) -> Self {
+        Self {
+            repo_id: repo_id.to_string(),
+            repo_type,
+            revision: Self::REVISION_MAIN.to_string(),
+            cache_dir: default_cache_dir(),
+        }
     }
 
-    pub fn new_model(repo_id: String) -> Self {
-        RepoBuilder::new()
-            .repo_id(repo_id)
-            .repo_type(RepoType::Model)
-            .build()
-            .unwrap()
+    pub fn set_revision(&mut self, revision: &str) {
+        self.revision = revision.to_string();
     }
 
-    pub fn new_dataset(repo_id: String) -> Self {
-        RepoBuilder::new()
-            .repo_id(repo_id)
-            .repo_type(RepoType::Dataset)
-            .build()
-            .unwrap()
+    pub fn set_cache_dir(&mut self, cache_dir: impl Into<PathBuf>) {
+        self.cache_dir = cache_dir.into();
     }
 
-    pub fn new_space(repo_id: String) -> Self {
-        RepoBuilder::new()
-            .repo_id(repo_id)
-            .repo_type(RepoType::Space)
-            .build()
-            .unwrap()
+    pub fn new_model(repo_id: &str) -> Self {
+        Self::new(repo_id, RepoType::Model)
+    }
+
+    pub fn new_dataset(repo_id: &str) -> Self {
+        Self::new(repo_id, RepoType::Dataset)
+    }
+
+    pub fn new_space(repo_id: &str) -> Self {
+        Self::new(repo_id, RepoType::Space)
     }
 
     /// cache_dir
@@ -162,194 +168,3 @@ impl RepoType {
         }
     }
 }
-
-/// Builder for creating `Repo` instances
-#[derive(Debug)]
-pub struct RepoBuilder {
-    repo_id: Option<String>,
-    repo_type: Option<RepoType>,
-    revision: Option<String>,
-    cache_dir: Option<PathBuf>,
-}
-
-impl RepoBuilder {
-    const REVISION_MAIN: &str = "master";
-
-    /// Create a new empty builder
-    pub fn new() -> Self {
-        RepoBuilder {
-            repo_id: None,
-            repo_type: None,
-            revision: None,
-            cache_dir: None,
-        }
-    }
-
-    /// Set the repository ID
-    pub fn repo_id(mut self, repo_id: impl Into<String>) -> Self {
-        self.repo_id = Some(repo_id.into());
-        self
-    }
-
-    /// Set the repository type
-    pub fn repo_type(mut self, repo_type: RepoType) -> Self {
-        self.repo_type = Some(repo_type);
-        self
-    }
-
-    /// Set the revision (defaults to "main")
-    pub fn revision(mut self, revision: impl Into<String>) -> Self {
-        self.revision = Some(revision.into());
-        self
-    }
-
-    /// Set the cache directory (defaults to CACHE_HOME environment variable)
-    pub fn cache_dir(mut self, cache_dir: impl Into<PathBuf>) -> Self {
-        self.cache_dir = Some(cache_dir.into());
-        if self.cache_dir.is_some() {
-            return self;
-        }
-        if let Ok(home) = std::env::var(CACHE_HOME) {
-            let mut path: PathBuf = home.into();
-            path.push("hub");
-            self.cache_dir = Some(path);
-        } else {
-            self.cache_dir = Some(Self::default_cache_dir());
-        }
-        self
-    }
-
-    fn default_cache_dir() -> PathBuf {
-        let mut path = dirs::home_dir().expect("Home directory cannot be found");
-        path.push(".cache");
-        path.push("modelscope");
-        path.push("hub");
-        path
-    }
-
-    /// Build the `Repo` instance
-    pub fn build(self) -> Result<Repo, OpsError> {
-        let repo_id = self
-            .repo_id
-            .ok_or(OpsError::BuildError("Repository ID is required".into()))?;
-        let repo_type = self
-            .repo_type
-            .ok_or(OpsError::BuildError("Repository type is required".into()))?;
-        let revision = self.revision.unwrap_or(Self::REVISION_MAIN.to_string());
-        let cache_dir = self.cache_dir.unwrap_or(Self::default_cache_dir());
-
-        Ok(Repo {
-            repo_id,
-            repo_type,
-            revision,
-            cache_dir,
-        })
-    }
-}
-
-impl Default for RepoBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Defines operations that can be performed on a repository.
-///
-/// This trait provides a common interface for interacting with model repositories,
-/// allowing different repository implementations to share the same API.
-pub trait RepoOps {
-    /// pull a repo
-    fn pull(&self) -> Result<(), OpsError>;
-
-    fn pull_with_progress(
-        &self,
-        progress: &mut impl Progress,
-    ) -> Result<(), OpsError>;
-
-    /// download a file
-    fn download(&self, filename: &str) -> Result<(), OpsError>;
-
-    /// Callback function that is invoked when a file download is requested
-    ///
-    /// # Arguments
-    ///
-    /// * `filename` - Name of the file to be downloaded
-    fn download_with_progress(
-        &self,
-        filename: &str,
-        progress: &mut impl Progress,
-    ) -> Result<(), OpsError>;
-
-    /// list hub files in the repo
-    fn list_hub_files(&self) -> Result<Vec<String>, OpsError>;
-
-    fn list_local_files(&self) -> Result<Vec<String>, OpsError>;
-
-    fn remove_all(&self) -> Result<Vec<String>, OpsError>;
-
-    fn remove(&self, filename: &str) -> Result<(), OpsError>;
-}
-
-#[derive(Default, Clone)]
-pub struct ProgressUnit {
-    filename: String,
-    total_size: u64,
-    current: u64,
-}
-
-impl ProgressUnit {
-    pub fn new(filename: String, total_size: u64) -> Self {
-        Self {
-            filename,
-            total_size,
-            ..Default::default()
-        }
-    }
-
-    pub fn update(&mut self, current: u64) {
-        self.current = current;
-    }
-
-    pub fn filename(&self) -> &str {
-        &self.filename
-    }
-
-    pub fn total_size(&self) -> u64 {
-        self.total_size
-    }
-
-    pub fn current(&self) -> u64 {
-        self.current
-    }
-}
-/// 通用进度处理接口
-pub trait Progress: Clone {
-    fn on_start(&mut self, unit: &ProgressUnit);
-    /// 进度更新时触发
-    /// current: 已完成工作量（如已传输字节数）
-    fn on_progress(&mut self, unit: &ProgressUnit);
-}
-
-// #[async_trait]
-// pub trait RepoOpsAsync {
-//     /// pull a repo
-//     async fn pull(&self);
-
-//     /// push a repo
-//     async fn push(&self);
-
-//     /// list files in repo
-//     async fn list(&self);
-
-//     /// download a file
-//     async fn download(&self, filename: &str) -> Result<(), OpsError>;
-
-//     /// upload a file
-//     async fn upload(&self, filename: &str);
-
-//     /// delete a file
-//     async fn delete(&self, filename: &str);
-
-//     /// check if a file exists
-//     async fn exists(&self, filename: &str) -> bool;
-// }
