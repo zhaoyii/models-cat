@@ -1,4 +1,3 @@
-//! 一些工具
 use reqwest::blocking;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -40,6 +39,15 @@ pub(crate) static BLOCKING_CLIENT: LazyLock<blocking::Client> = LazyLock::new(||
         .redirect(reqwest::redirect::Policy::limited(10)) // 自定义重定向次数
         .build()
         .expect("Failed to build reqwest client")
+});
+
+
+pub(crate) static ASYNC_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .user_agent("curl/7.79.1")
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .expect("Failed to build async reqwest client")
 });
 
 pub(crate) fn sha256(file_path: impl AsRef<Path>) -> Result<String, std::io::Error> {

@@ -1,5 +1,5 @@
 use crate::fslock;
-use crate::ms_hub;
+use crate::ms_hub::synchronous;
 use crate::repo::Repo;
 use crate::utils::{self, BLOCKING_CLIENT, OpsError};
 use indicatif::{
@@ -45,7 +45,7 @@ impl ModelsCat {
     }
 
     fn inner_pull(&self, mut progress: Option<impl Progress>) -> Result<(), OpsError> {
-        let blobs = ms_hub::get_blob_files(&self.repo)?;
+        let blobs = synchronous::get_blob_files(&self.repo)?;
         for fileinfo in blobs {
             let hub_revision = fileinfo.revision.clone();
             let snapshot_path = self.repo.snapshot_path(&hub_revision);
@@ -103,7 +103,7 @@ impl ModelsCat {
         filename: &str,
         mut progress: Option<impl Progress>,
     ) -> Result<(), OpsError> {
-        let repo_files = ms_hub::get_repo_files(&self.repo)?;
+        let repo_files = synchronous::get_repo_files(&self.repo)?;
         let fileinfo = repo_files.get_file_info(filename)?;
         let hub_revision = fileinfo.revision.clone();
 
@@ -142,7 +142,7 @@ impl ModelsCat {
 
     /// list hub files in the repo
     pub fn list_hub_files(&self) -> Result<Vec<String>, OpsError> {
-        let files = ms_hub::get_blob_files(&self.repo)?;
+        let files = synchronous::get_blob_files(&self.repo)?;
         Ok(files.iter().map(|f| f.path.clone()).collect())
     }
 
