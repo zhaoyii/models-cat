@@ -13,6 +13,7 @@ When to use models-cat for model downloads? Three main scenarios:
 - Download progress callback
 
 ## Usage
+
 ```rust
 use models_cat::{downloand_model_with_progress, ProgressBarWrapper};
 
@@ -22,6 +23,7 @@ downloand_model_with_progress(
     ProgressBarWrapper::default(),
 ).unwrap();
 ```
+
 Download models from ModelScope hosted repositories like [BAAI/bge-small-zh-v1.5](https://www.modelscope.cn/models/BAAI/bge-small-zh-v1.5) to local storage. Default cache path is `[HOME_DIR].cache/modelscope/hub/models/models--BAAI--bge-small-zh-v1.5/`.
 
 [English](README.md) | [中文](README.zh-CN.md)
