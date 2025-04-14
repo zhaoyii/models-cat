@@ -13,12 +13,12 @@ pub use repo::{Repo, RepoType};
 pub use utils::OpsError;
 
 /// Shortcut for downloading a model
-pub fn downloand_model(repo_id: &str, filename: &str) -> Result<(), OpsError> {
+pub fn download_model(repo_id: &str, filename: &str) -> Result<(), OpsError> {
     ModelsCat::new(Repo::new_model(repo_id)).download(filename)
 }
 
 /// Shortcut for downloading a model with progress
-pub fn downloand_model_with_progress(
+pub fn download_model_with_progress(
     repo_id: &str,
     filename: &str,
     progress: impl Progress,
@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn test_download_model() {
-        downloand_model_with_progress(
+        download_model_with_progress(
             "BAAI/bge-small-zh-v1.5",
             "model.safetensors",
             ProgressBarWrapper::default(),

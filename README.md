@@ -15,9 +15,9 @@ When to use models-cat for model downloads? Three main scenarios:
 ## Usage
 
 ```rust
-use models_cat::{downloand_model_with_progress, ProgressBarWrapper};
+use models_cat::{download_model_with_progress, ProgressBarWrapper};
 
-downloand_model_with_progress(
+download_model_with_progress(
     "BAAI/bge-small-zh-v1.5",
     "model.safetensors",
     ProgressBarWrapper::default(),
