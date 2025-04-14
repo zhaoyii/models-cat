@@ -4,6 +4,10 @@
 mod fslock;
 mod ms_hub;
 
-pub mod utils;
 pub mod hub;
 pub mod repo;
+pub mod utils;
+
+pub use hub::{ModelsCat, MultiProgressWrapper, Progress, ProgressBarWrapper, ProgressUnit};
+pub use repo::{Repo, RepoType};
+pub use utils::OpsError;

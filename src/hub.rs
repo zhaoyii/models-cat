@@ -37,12 +37,15 @@ impl ModelsCat {
 
     /// pull a repo
     pub fn pull(&self) -> Result<(), OpsError> {
-        unimplemented!()
+        self.inner_pull(None::<MultiProgressWrapper>)
     }
 
     pub fn pull_with_progress(&self, progress: impl Progress) -> Result<(), OpsError> {
+        self.inner_pull(Some(progress))
+    }
+
+    fn inner_pull(&self, mut progress: Option<impl Progress>) -> Result<(), OpsError> {
         let blobs = ms_hub::get_blob_files(&self.repo)?;
-        let mut prg = Some(progress);
         for fileinfo in blobs {
             let hub_revision = fileinfo.revision.clone();
             let snapshot_path = self.repo.snapshot_path(&hub_revision);
@@ -59,7 +62,6 @@ impl ModelsCat {
             if std::fs::exists(&filepath)? {
                 if let Some(ref file_sha256) = fileinfo.sha256 {
                     if &utils::sha256(&filepath)? == file_sha256 {
-                        self.repo.create_ref(&hub_revision)?;
                         continue;
                     }
                 }
@@ -71,8 +73,7 @@ impl ModelsCat {
                 fileinfo.path.clone()
             );
 
-            download_file(&file_url, &filepath, &fileinfo.path, &mut prg)?;
-            self.repo.create_ref(&hub_revision)?;
+            download_file(&file_url, &filepath, &fileinfo.path, &mut progress)?;
             lock.unlock();
         }
 
@@ -121,7 +122,6 @@ impl ModelsCat {
         if std::fs::exists(&filepath)? {
             if let Some(ref file_sha256) = fileinfo.sha256 {
                 if &utils::sha256(&filepath)? == file_sha256 {
-                    self.repo.create_ref(&hub_revision)?;
                     lock.unlock();
                     return Ok(());
                 }
@@ -135,7 +135,6 @@ impl ModelsCat {
         );
 
         download_file(&file_url, &filepath, filename, &mut progress)?;
-        self.repo.create_ref(&hub_revision)?;
 
         lock.unlock();
         Ok(())
@@ -143,19 +142,66 @@ impl ModelsCat {
 
     /// list hub files in the repo
     pub fn list_hub_files(&self) -> Result<Vec<String>, OpsError> {
-        unimplemented!()
+        let files = ms_hub::get_blob_files(&self.repo)?;
+        Ok(files.iter().map(|f| f.path.clone()).collect())
     }
 
     pub fn list_local_files(&self) -> Result<Vec<String>, OpsError> {
-        unimplemented!()
+        let base_path = self.repo.cache_dir().join("snapshots");
+        let mut files = Vec::new();
+
+        for entry in walkdir::WalkDir::new(&base_path)
+            .min_depth(2) // 跳过snapshots根目录
+            .max_depth(10) // 限制遍历深度 // 限制遍历深度：repo_path/<snapshot>/<file_path>
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_type().is_file() {
+                let rel_path = entry
+                    .path()
+                    .strip_prefix(&base_path)
+                    .map_err(|e| OpsError::HubError(e.to_string()))?
+                    .components()
+                    .skip(1) // 跳过commit hash目录
+                    .collect::<PathBuf>();
+
+                files.push(rel_path.to_string_lossy().replace('\\', "/"));
+            }
+        }
+
+        Ok(files)
     }
 
-    pub fn remove_all(&self) -> Result<Vec<String>, OpsError> {
-        unimplemented!()
+    pub fn remove_all(&self) -> Result<(), OpsError> {
+        std::fs::remove_dir_all(self.repo.cache_dir())?;
+        Ok(())
     }
 
     pub fn remove(&self, filename: &str) -> Result<(), OpsError> {
-        unimplemented!()
+        let base_path = self.repo.cache_dir().join("snapshots");
+
+        for entry in walkdir::WalkDir::new(&base_path)
+            .min_depth(2) // 跳过snapshots根目录
+            .max_depth(10) // 限制遍历深度 // 限制遍历深度：repo_path/<snapshot>/<file_path>
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_type().is_file() {
+                let rel_path = entry
+                    .path()
+                    .strip_prefix(&base_path)
+                    .map_err(|e| OpsError::HubError(e.to_string()))?
+                    .components()
+                    .skip(1) // 跳过commit hash目录
+                    .collect::<PathBuf>();
+
+                if filename == rel_path.to_string_lossy().replace('\\', "/") {
+                    std::fs::remove_file(entry.path())?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -361,5 +407,35 @@ mod tests {
         let cat = ModelsCat::new(Repo::new_model("BAAI/bge-small-zh-v1.5"));
         cat.pull_with_progress(MultiProgressWrapper::default())
             .unwrap();
+    }
+
+    #[test]
+    fn test_list_hub_files() {
+        let cat = ModelsCat::new(Repo::new_model("BAAI/bge-small-zh-v1.5"));
+        let len = cat.list_hub_files().unwrap().len();
+        assert_eq!(len, 14);
+    }
+
+    #[test]
+    fn test_list_local_files() {
+        let cat = ModelsCat::new(Repo::new_model("BAAI/bge-small-zh-v1.5"));
+        let len = cat.list_local_files().unwrap().len();
+        cat.list_local_files()
+            .unwrap()
+            .iter()
+            .for_each(|x| println!("{}", x));
+        assert_eq!(len, 14);
+    }
+
+    #[test]
+    fn test_remove_all() {
+        let cat = ModelsCat::new(Repo::new_model("BAAI/bge-small-zh-v1.5"));
+        cat.remove_all().unwrap();
+    }
+
+    #[test]
+    fn test_remove() {
+        let cat = ModelsCat::new(Repo::new_model("BAAI/bge-small-zh-v1.5"));
+        cat.remove("pytorch_model.bin").unwrap();
     }
 }
