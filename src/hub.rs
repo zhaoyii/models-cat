@@ -215,6 +215,10 @@ fn download_file(
     temp_file
         .persist(filepath)
         .map_err(|e| OpsError::IoError(e.error))?;
+
+    if let Some(prg) = progress.as_mut() {
+        prg.on_progress(&unit)?;
+    }
     Ok(())
 }
 
