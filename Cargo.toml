@@ -6,6 +6,7 @@ homepage = "https://github.com/zhaoyii/models-cat"
 repository = "https://github.com/zhaoyii/models-cat"
 license = "Apache-2.0"
 readme = "README.md"
+documentation = "https://docs.rs/models-cat"
 keywords = ["modelscope", "models", "download"]
 description = """
 Unofficial Rust client for [ModelScope](https://www.modelscope.cn/) Hub
