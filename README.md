@@ -46,6 +46,6 @@ model-cat = { version = "*", features = ["tokio"] }
 
 Download models from ModelScope hosted repositories like [BAAI/bge-small-zh-v1.5](https://www.modelscope.cn/models/BAAI/bge-small-zh-v1.5) to local storage. Default cache path is `[HOME_DIR].cache/modelscope/hub/models/models--BAAI--bge-small-zh-v1.5/`.
 
-使用快捷函数时，可通过环境变量`MODELS_CAT_CACHE_DIR`设置本地缓存路径。或者使用`ModelsCat`，在初始化时传入本地缓存路径。
+When using shortcut functions, you can set the local cache path via the environment variable `MODELS_CAT_CACHE_DIR`. Alternatively, you can use `ModelsCat` and pass the local cache path during initialization.
 
 [English](https://github.com/zhaoyii/models-cat) | [中文](https://github.com/zhaoyii/models-cat/blob/main/README.zh-CN.md)
