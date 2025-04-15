@@ -1,3 +1,4 @@
+//! Asynchronous hub for downloading
 use super::ms_hub::asynchronous;
 use crate::fslock;
 use crate::repo::Repo;
@@ -10,12 +11,14 @@ use std::fmt;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
+/// A struct representing a models management system, which provides asynchronous operations.
 pub struct ModelsCat {
     endpoint: String,
     repo: Repo,
 }
 
 impl ModelsCat {
+    /// Creates a new instance of `ModelsCat` with the specified repository.
     pub fn new(repo: Repo) -> Self {
         Self {
             repo,
@@ -23,23 +26,27 @@ impl ModelsCat {
         }
     }
 
+    /// Creates a new `ModelsCat` instance with a custom endpoint.
     pub fn new_with_endpoint(repo: Repo, endpoint: String) -> Self {
         Self { repo, endpoint }
     }
 
+    /// Retrieves the repository configuration.
     pub fn repo(&self) -> &Repo {
         &self.repo
     }
 
+    /// Retrieves the endpoint URL.
     pub fn endpoint(&self) -> &str {
         &self.endpoint
     }
 
-    /// pull a repo
+    /// Pull a repo
     pub async fn pull(&self) -> Result<(), OpsError> {
         self.inner_pull(None::<MultiProgressWrapper>).await
     }
 
+    /// Pull a repo with a progress
     pub async fn pull_with_progress(&self, progress: impl Progress) -> Result<(), OpsError> {
         self.inner_pull(Some(progress)).await
     }
@@ -80,17 +87,14 @@ impl ModelsCat {
         Ok(())
     }
 
+    /// Download a file from the repository.
     pub async fn download(&self, filename: &str) -> Result<(), OpsError> {
         self.inner_download(filename, None::<ProgressBarWrapper>)
             .await?;
         Ok(())
     }
 
-    /// Callback function that is invoked when a file download is requested
-    ///
-    /// # Arguments
-    ///
-    /// * `filename` - Name of the file to be downloaded
+    /// Download a file from the repository with a progress.
     pub async fn download_with_progress(
         &self,
         filename: &str,
@@ -142,12 +146,13 @@ impl ModelsCat {
         Ok(())
     }
 
-    /// list hub files in the repo
+    /// List files in the remote repo
     pub async fn list_hub_files(&self) -> Result<Vec<String>, OpsError> {
         let files = asynchronous::get_blob_files(&self.repo).await?;
         Ok(files.iter().map(|f| f.path.clone()).collect())
     }
 
+    /// List files in the local repo
     pub async fn list_local_files(&self) -> Result<Vec<String>, OpsError> {
         let base_path = self.repo.cache_dir().join("snapshots");
         let mut files = Vec::new();
@@ -174,11 +179,13 @@ impl ModelsCat {
         Ok(files)
     }
 
+    /// Remove all files in the local repo.
     pub async fn remove_all(&self) -> Result<(), OpsError> {
         tokio::fs::remove_dir_all(self.repo.cache_dir()).await?;
         Ok(())
     }
 
+    /// Remove a file from the local repo.
     pub async fn remove(&self, filename: &str) -> Result<(), OpsError> {
         let base_path = self.repo.cache_dir().join("snapshots");
 
@@ -213,9 +220,8 @@ impl ModelsCat {
 ///
 /// * `file_url` - The URL of the file to download
 /// * `filepath` - The destination path where the file will be saved
+/// * `filename` - The full filename including extension and parent directory, such as `models.gguf` or `gguf/models.gguf`
 /// * `progress` - Optional progress tracker implementing the `Progress` trait
-///
-/// Use BufReader and BufWriter to efficiently read and write the file in chunks.
 async fn download_file(
     file_url: &str,
     filepath: &PathBuf,
@@ -268,6 +274,10 @@ async fn download_file(
     Ok(())
 }
 
+/// Represents a unit of progress for tracking file downloads.
+///
+/// This struct holds information about the file being downloaded,
+/// including its name, total size, and current progress.
 #[derive(Default, Clone)]
 pub struct ProgressUnit {
     filename: String,
@@ -276,6 +286,7 @@ pub struct ProgressUnit {
 }
 
 impl ProgressUnit {
+    /// Creates a new `ProgressUnit` instance.
     pub fn new(filename: String, total_size: u64) -> Self {
         Self {
             filename,
@@ -284,37 +295,55 @@ impl ProgressUnit {
         }
     }
 
+    /// Updates the current progress of the download.
     pub fn update(&mut self, current: u64) {
         self.current = current;
     }
 
+    /// Retrieves the filename of the file being downloaded.
     pub fn filename(&self) -> &str {
         &self.filename
     }
 
+    /// Retrieves the total size of the file in bytes.
     pub fn total_size(&self) -> u64 {
         self.total_size
     }
 
+    /// Retrieves the current number of bytes downloaded.
     pub fn current(&self) -> u64 {
         self.current
     }
 }
 
+/// A trait defining the behavior for progress tracking during file downloads.
+///
+/// This trait allows implementors to handle the start, progress updates, and finish events
+/// of a download operation. It is designed to be thread-safe (`Send + Sync + 'static `) and clonable.
 #[async_trait]
 pub trait Progress: Clone + Send + Sync + 'static {
+    /// Called when a download starts.
     async fn on_start(&mut self, unit: &ProgressUnit) -> Result<(), OpsError>;
 
+    /// Called periodically to update the progress of a download.
     async fn on_progress(&mut self, unit: &ProgressUnit) -> Result<(), OpsError>;
 
+    /// Called when a download finishes.
     async fn on_finish(&mut self, unit: &ProgressUnit) -> Result<(), OpsError>;
 }
 
+/// A wrapper around a single [`ProgressBar`] for tracking progress during file downloads.
+///
+/// This struct implements the [`Progress`] trait and provides methods to handle the start,
+/// progress updates, and finish events of a download operation.
 #[derive(Default, Clone)]
 pub struct ProgressBarWrapper(Option<ProgressBar>);
 
 #[async_trait]
 impl Progress for ProgressBarWrapper {
+    /// Called when a download starts.
+    ///
+    /// Initializes the progress bar with the total size of the file being downloaded.
     async fn on_start(&mut self, unit: &ProgressUnit) -> Result<(), OpsError> {
         let pb = ProgressBar::new(unit.total_size()).with_finish(ProgressFinish::AndLeave);
         let filename = unit.filename().to_string();
@@ -327,6 +356,9 @@ impl Progress for ProgressBarWrapper {
         Ok(())
     }
 
+    /// Called periodically to update the progress of a download.
+    ///
+    /// Updates the position of the progress bar based on the current bytes downloaded.
     async fn on_progress(&mut self, unit: &ProgressUnit) -> Result<(), OpsError> {
         if let Some(ref pb) = self.0 {
             pb.set_position(unit.current());
@@ -334,6 +366,9 @@ impl Progress for ProgressBarWrapper {
         Ok(())
     }
 
+    /// Called when a download finishes.
+    ///
+    /// Ensures the progress bar reflects the final downloaded bytes.
     async fn on_finish(&mut self, unit: &ProgressUnit) -> Result<(), OpsError> {
         if let Some(ref pb) = self.0 {
             pb.set_position(unit.current());
@@ -342,6 +377,10 @@ impl Progress for ProgressBarWrapper {
     }
 }
 
+/// A wrapper around `MultiProgressBar` for tracking multiple progress bars during file downloads.
+///
+/// This struct implements the `Progress` trait and provides methods to handle the start,
+/// progress updates, and finish events of multiple download operations simultaneously.
 #[derive(Default, Clone)]
 pub struct MultiProgressWrapper {
     current_bar: Option<ProgressBar>,
@@ -349,6 +388,7 @@ pub struct MultiProgressWrapper {
 }
 
 impl MultiProgressWrapper {
+    /// Creates a new `MultiProgressWrapper` instance.
     pub fn new() -> Self {
         Self {
             current_bar: None,
@@ -359,6 +399,9 @@ impl MultiProgressWrapper {
 
 #[async_trait]
 impl Progress for MultiProgressWrapper {
+    /// Called when a download starts.
+    ///
+    /// Initializes a new progress bar within the multi-progress bar system.
     async fn on_start(&mut self, unit: &ProgressUnit) -> Result<(), OpsError> {
         let pb = ProgressBar::new(unit.total_size()).with_finish(ProgressFinish::AndLeave);
         self.current_bar = Some(self.inner.add(pb.clone()));
@@ -372,6 +415,9 @@ impl Progress for MultiProgressWrapper {
         Ok(())
     }
 
+    /// Called periodically to update the progress of a download.
+    ///
+    /// Updates the position of the current progress bar based on the downloaded bytes.
     async fn on_progress(&mut self, unit: &ProgressUnit) -> Result<(), OpsError> {
         if let Some(ref pb) = self.current_bar {
             pb.set_position(unit.current());
@@ -379,6 +425,9 @@ impl Progress for MultiProgressWrapper {
         Ok(())
     }
 
+    /// Called when a download finishes.
+    ///
+    /// Ensures the current progress bar reflects the final downloaded bytes.
     async fn on_finish(&mut self, unit: &ProgressUnit) -> Result<(), OpsError> {
         if let Some(ref pb) = self.current_bar {
             pb.set_position(unit.current());

@@ -1,4 +1,4 @@
-// #![deny(missing_docs)]
+#![deny(missing_docs)]
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
 mod fslock;
@@ -17,6 +17,7 @@ pub fn download_model(repo_id: &str, filename: &str) -> Result<(), OpsError> {
 }
 
 /// Shortcut for downloading a model with progress
+/// The filename including extension and parent directory, such as `models.gguf` or `gguf/models.gguf`.
 pub fn download_model_with_progress(
     repo_id: &str,
     filename: &str,
@@ -99,6 +100,7 @@ mod tests {
     }
 }
 
+/// The asynchronous module provides a set of asynchronous functions for interacting with model and dataset repositories.
 #[cfg(feature = "tokio")]
 pub mod asynchronous {
     pub use crate::hub::async_hub::{

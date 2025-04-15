@@ -1,3 +1,4 @@
+//! The representation of a repo on the hub.
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -25,6 +26,7 @@ pub struct Repo {
 impl Repo {
     const REVISION_MAIN: &str = "master";
 
+    /// Creates a new `Repo` instance with the specified `repo_id` and `repo_type`.
     pub fn new(repo_id: &str, repo_type: RepoType) -> Self {
         Self {
             repo_id: repo_id.to_string(),
@@ -34,44 +36,55 @@ impl Repo {
         }
     }
 
+    /// Sets the revision of the repository.
     pub fn set_revision(&mut self, revision: &str) {
         self.revision = revision.to_string();
     }
 
+    /// Sets the cache directory for the repository.
     pub fn set_cache_dir(&mut self, cache_dir: impl Into<PathBuf>) {
         self.cache_dir = cache_dir.into();
     }
 
+    /// Shortcut for creating a new model repository.
     pub fn new_model(repo_id: &str) -> Self {
         Self::new(repo_id, RepoType::Model)
     }
 
+    /// Shortcut for creating a new dataset repository.
     pub fn new_dataset(repo_id: &str) -> Self {
         Self::new(repo_id, RepoType::Dataset)
     }
 
+    /// Shortcut for creating a new space repository.
     pub fn new_space(repo_id: &str) -> Self {
         Self::new(repo_id, RepoType::Space)
     }
 
-    /// cache_dir
+    /// Get the cache home directory.
     pub fn cache_home(&self) -> &PathBuf {
         &self.cache_dir
     }
 
+    /// Get the repository ID.
     pub fn repo_id(&self) -> &str {
         &self.repo_id
     }
 
+    /// Get the repository type.
     pub fn repo_type(&self) -> &RepoType {
         &self.repo_type
     }
 
+    /// Get the revision.
     pub fn revision(&self) -> &str {
         &self.revision
     }
 
-    /// Create a new `Repo` instance
+    /// Constructs and returns the full cache directory path for the repository.
+    ///
+    /// This function generates a unique cache directory path based on the repository type and ID.
+    /// The path is constructed to ensure compatibility with filesystem path conventions.
     pub fn cache_dir(&self) -> PathBuf {
         let prefix = self.repo_type.to_path_part();
         let mut path = self.cache_dir.clone();
@@ -96,6 +109,7 @@ impl Repo {
         )
     }
 
+    /// Get the URL path for this repo with resolve
     pub fn url_path_with_resolve(&self) -> String {
         let prefix = self.repo_type.to_path_part();
         format!(
@@ -110,8 +124,7 @@ impl Repo {
         self.revision.replace('/', "%2F")
     }
 
-    /// get ref path
-    /// .cache/huggingface/hub/models--lm-kit--bge-m3-gguf/refs/main
+    /// Get ref path, such as
     pub fn ref_path(&self) -> PathBuf {
         let mut ref_path = self.cache_dir();
         ref_path.push("refs");
@@ -134,6 +147,10 @@ impl Repo {
         Ok(())
     }
 
+    /// Returns the path to the snapshot directory for a specific commit hash.
+    /// 
+    /// The snapshot directory is located within the repository's cache directory under the `snapshots` folder.
+    /// This function constructs the full path by appending the `snapshots` folder and the provided `commit_hash`.
     pub fn snapshot_path(&self, commit_hash: &str) -> PathBuf {
         let mut pointer_path = self.cache_dir();
         pointer_path.push("snapshots");

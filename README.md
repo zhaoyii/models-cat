@@ -26,6 +26,8 @@ download_model_with_progress(
 ).unwrap();
 ```
 
+Note: The filename including extension and parent directory, such as `model.safetensors` or `safetensors/model.safetensors`.
+
 Async download：
 
 ```rust

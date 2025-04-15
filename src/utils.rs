@@ -1,3 +1,4 @@
+//! Some utility
 use reqwest::blocking;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -13,9 +14,11 @@ pub enum OpsError {
     #[error("Lock acquisition failed: {0}")]
     LockAcquisition(PathBuf),
 
+    /// Build error
     #[error("Build error {0}")]
     BuildError(String),
 
+    /// Hub error
     #[error("Hub error {0}")]
     HubError(String),
 
@@ -26,10 +29,6 @@ pub enum OpsError {
     /// request error
     #[error("Request error {0}")]
     RequestError(#[from] reqwest::Error),
-
-    #[cfg(feature = "tokio")]
-    #[error("Request error {0}")]
-    TaskJoinErrorr(#[from] tokio::task::JoinError),
 }
 
 /// A static HTTP client for making blocking requests.
