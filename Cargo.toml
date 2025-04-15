@@ -2,6 +2,15 @@
 name = "models-cat"
 version = "0.1.0"
 edition = "2024"
+homepage = "https://github.com/zhaoyii/models-cat"
+repository = "https://github.com/zhaoyii/models-cat"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["modelscope", "models", "download"]
+description = """
+Unofficial Rust client for [ModelScope](https://www.modelscope.cn/) Hub
+"""
+
 
 [dependencies]
 async-trait = { version = "0.1.88", optional = true }

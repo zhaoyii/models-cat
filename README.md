@@ -1,13 +1,13 @@
 # models-cat
-models-cat is an unofficial Rust client for ModelScope Hub, inspired by [hf-hub](https://github.com/huggingface/hf-hub). Born from a simple need: "To build a Rust desktop app requiring model/dataset downloads with no suitable Rust client."
+models-cat is an unofficial Rust client for [ModelScope](https://www.modelscope.cn/) Hub, inspired by [hf-hub](https://github.com/huggingface/hf-hub). Born from a simple need: "To build a Rust desktop app requiring model/dataset downloads with no suitable Rust client."
 
 When to use models-cat for model downloads? Three main scenarios:
-1. Network restrictions prevent accessing HuggingFace via hf-hub.
+1. Network restrictions prevent accessing [huggingface](https://huggingface.co/) via hf-hub.
 2. While hf-hub can download from [hf-mirror](https://hf-mirror.com/), stability and download speeds aren't guaranteed.
 3. Hosting models on ModelScope Hub ensures stability and speed, but hf-hub isn't compatible with ModelScope - models-cat is required.
 
 ## Features
-- Model/dataset download & cache management
+- Model/dataset download & cache management, synchronous & asynchronous
 - Concurrent safe file access
 - Local cache validation (SHA256)
 - Download progress callback
@@ -46,7 +46,7 @@ Asynchronous download requires enabling the tokio feature:
 model-cat = { version = "*", features = ["tokio"] }
 ```
 
-Download models from ModelScope hosted repositories like [BAAI/bge-small-zh-v1.5](https://www.modelscope.cn/models/BAAI/bge-small-zh-v1.5) to local storage. Default cache path is `[HOME_DIR].cache/modelscope/hub/models/models--BAAI--bge-small-zh-v1.5/`.
+Download models from ModelScope hosted repositories like [BAAI/bge-small-zh-v1.5](https://www.modelscope.cn/models/BAAI/bge-small-zh-v1.5) to local storage，default cache path is `[HOME_DIR].cache/modelscope/hub/models--BAAI--bge-small-zh-v1.5/`.
 
 When using shortcut functions, you can set the local cache path via the environment variable `MODELS_CAT_CACHE_DIR`. Alternatively, you can use `ModelsCat` and pass the local cache path during initialization.
 

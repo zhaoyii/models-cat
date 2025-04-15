@@ -88,7 +88,6 @@ impl Repo {
     pub fn cache_dir(&self) -> PathBuf {
         let prefix = self.repo_type.to_path_part();
         let mut path = self.cache_dir.clone();
-        path.push(prefix);
         path.push(format!("{prefix}--{}", self.repo_id).replace('/', "--"));
         path
     }
