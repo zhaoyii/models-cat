@@ -41,7 +41,7 @@ download_model_with_progress(
 异步下载需开启特性`tokio`特性：
 
 ```toml
-model-cat = { version = "*", features = ["tokio"] }
+models-cat = { version = "*", features = ["tokio"] }
 ```
 
 从 ModelScope 的托管仓库 [BAAI/bge-small-zh-v1.5](https://www.modelscope.cn/models/BAAI/bge-small-zh-v1.5) 下载模型到本地，默认保存在`[HOME_DIR].cache/modelscope/hub/models--BAAI--bge-small-zh-v1.5/`目录下。
