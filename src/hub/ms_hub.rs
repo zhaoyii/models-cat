@@ -243,7 +243,8 @@ pub mod synchronous {
 
 #[cfg(feature = "tokio")]
 pub mod asynchronous {
-    use super::{ApiResponse, Error, FileInfo};
+    use super::{ApiResponse, FileInfo};
+    use reqwest::Error;
     use crate::repo::{Repo, RepoType};
     use crate::utils::ASYNC_CLIENT;
     use std::collections::VecDeque;

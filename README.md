@@ -29,9 +29,9 @@ download_model_with_progress(
 Async download：
 
 ```rust
-use models_cat::asynchronous::{downloand_model_with_progress, ProgressBarWrapper};
+use models_cat::asynchronous::{download_model_with_progress, ProgressBarWrapper};
 
-downloand_model_with_progress(
+download_model_with_progress(
     "BAAI/bge-small-zh-v1.5",
     "model.safetensors",
     ProgressBarWrapper::default(),
