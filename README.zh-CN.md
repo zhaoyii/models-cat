@@ -46,4 +46,6 @@ model-cat = { version = "*", features = ["tokio"] }
 
 从 ModelScope 的托管仓库 [BAAI/bge-small-zh-v1.5](https://www.modelscope.cn/models/BAAI/bge-small-zh-v1.5) 下载模型到本地，默认保存在`[HOME_DIR].cache/modelscope/hub/models/models--BAAI--bge-small-zh-v1.5/`目录下。
 
+When using shortcut functions, you can set the local cache path via the environment variable `MODELS_CAT_CACHE_DIR`. Alternatively, you can use `ModelsCat` and pass the local cache path during initialization.
+
 [English](https://github.com/zhaoyii/models-cat) | [中文](https://github.com/zhaoyii/models-cat/blob/main/README.zh-CN.md)
