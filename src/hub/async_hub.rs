@@ -2,15 +2,13 @@ use super::ms_hub::asynchronous;
 use crate::fslock;
 use crate::repo::Repo;
 use crate::utils::{self, ASYNC_CLIENT, OpsError};
-use async_tempfile::TempFile;
 use async_trait::async_trait;
 use indicatif::{
     MultiProgress as MultiProgressBar, ProgressBar, ProgressFinish, ProgressState, ProgressStyle,
 };
 use std::fmt;
-use std::io::{self, Read, Write};
 use std::path::PathBuf;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 pub struct ModelsCat {
     endpoint: String,
@@ -39,20 +37,53 @@ impl ModelsCat {
 
     /// pull a repo
     pub async fn pull(&self) -> Result<(), OpsError> {
-        unimplemented!()
+        self.inner_pull(None::<MultiProgressWrapper>).await
     }
 
     pub async fn pull_with_progress(&self, progress: impl Progress) -> Result<(), OpsError> {
-        unimplemented!()
+        self.inner_pull(Some(progress)).await
     }
 
     async fn inner_pull(&self, mut progress: Option<impl Progress>) -> Result<(), OpsError> {
-        unimplemented!()
+        let blobs = asynchronous::get_blob_files(&self.repo).await?;
+        for fileinfo in blobs {
+            let hub_revision = fileinfo.revision.clone();
+            let snapshot_path = self.repo.snapshot_path(&hub_revision);
+            std::fs::create_dir_all(&snapshot_path)?;
+            let filepath = {
+                let mut filepath = snapshot_path.clone();
+                for part in fileinfo.path.split("/") {
+                    filepath.push(part);
+                }
+                filepath
+            };
+
+            let mut lock = fslock::FsLock::lock(snapshot_path)?;
+            if std::fs::exists(&filepath)? {
+                if let Some(ref file_sha256) = fileinfo.sha256 {
+                    if &utils::sha256(&filepath)? == file_sha256 {
+                        continue;
+                    }
+                }
+            }
+            let file_url = format!(
+                "{}/{}/{}",
+                self.endpoint,
+                self.repo.url_path_with_resolve(),
+                fileinfo.path.clone()
+            );
+
+            download_file(&file_url, &filepath, &fileinfo.path, &mut progress).await?;
+            lock.unlock();
+        }
+
+        Ok(())
     }
 
-    /// download a file
     pub async fn download(&self, filename: &str) -> Result<(), OpsError> {
-        unimplemented!()
+        self.inner_download(filename, None::<ProgressBarWrapper>)
+            .await?;
+        Ok(())
     }
 
     /// Callback function that is invoked when a file download is requested
@@ -113,7 +144,8 @@ impl ModelsCat {
 
     /// list hub files in the repo
     pub async fn list_hub_files(&self) -> Result<Vec<String>, OpsError> {
-        unimplemented!()
+        let files = asynchronous::get_blob_files(&self.repo).await?;
+        Ok(files.iter().map(|f| f.path.clone()).collect())
     }
 
     pub async fn list_local_files(&self) -> Result<Vec<String>, OpsError> {
@@ -213,10 +245,9 @@ async fn download_file(
         .ok_or(OpsError::HubError("Invalid file path".into()))?
         .to_str()
         .ok_or(OpsError::HubError("Invalid file path".into()))?;
-
-    let realfile_path = parent.join(realname);
+    let temp_filepath = parent.join(format!("{}.tmp", realname));
     {
-        let mut temp_file = tokio::fs::File::create(&realfile_path).await?;
+        let mut temp_file = tokio::fs::File::create(&temp_filepath).await?;
         let mut buf_write = tokio::io::BufWriter::new(&mut temp_file);
         while let Some(chunk) = response.chunk().await? {
             buf_write.write_all(&chunk).await?;
@@ -229,13 +260,7 @@ async fn download_file(
         }
         buf_write.flush().await?;
     }
-
-    let source = tokio::fs::File::open(&realfile_path).await?;
-    let target = tokio::fs::File::create(filepath).await?;
-    let mut source_buf_read = tokio::io::BufReader::new(source);
-    let mut target_buf_write = tokio::io::BufWriter::new(target);
-    let n = tokio::io::copy(&mut source_buf_read, &mut target_buf_write).await?;
-    println!("downloaded {} bytes", n);
+    tokio::fs::rename(&temp_filepath, filepath).await?;
 
     if let Some(prg) = progress.as_mut() {
         prg.on_finish(&unit).await?;
@@ -277,7 +302,7 @@ impl ProgressUnit {
 }
 
 #[async_trait]
-pub trait Progress: Clone + Send + Sync {
+pub trait Progress: Clone + Send + Sync + 'static {
     async fn on_start(&mut self, unit: &ProgressUnit) -> Result<(), OpsError>;
 
     async fn on_progress(&mut self, unit: &ProgressUnit) -> Result<(), OpsError>;
@@ -379,5 +404,44 @@ mod tests {
         cat.download_with_progress("model.safetensors", ProgressBarWrapper::default())
             .await
             .unwrap();
+    }
+
+    #[test]
+    async fn test_pull_with_progress() {
+        let cat = ModelsCat::new(Repo::new_model("BAAI/bge-small-zh-v1.5"));
+        cat.pull_with_progress(MultiProgressWrapper::default())
+            .await
+            .unwrap();
+    }
+
+    #[test]
+    async fn test_list_hub_files() {
+        let cat = ModelsCat::new(Repo::new_model("BAAI/bge-small-zh-v1.5"));
+        let len = cat.list_hub_files().await.unwrap().len();
+        assert_eq!(len, 14);
+    }
+
+    #[test]
+    async fn test_list_local_files() {
+        let cat = ModelsCat::new(Repo::new_model("BAAI/bge-small-zh-v1.5"));
+        let len = cat.list_local_files().await.unwrap().len();
+        cat.list_local_files()
+            .await
+            .unwrap()
+            .iter()
+            .for_each(|x| println!("{}", x));
+        assert_eq!(len, 14);
+    }
+
+    #[test]
+    async fn test_remove_all() {
+        let cat = ModelsCat::new(Repo::new_model("BAAI/bge-small-zh-v1.5"));
+        cat.remove_all().await.unwrap();
+    }
+
+    #[test]
+    async fn test_remove() {
+        let cat = ModelsCat::new(Repo::new_model("BAAI/bge-small-zh-v1.5"));
+        cat.remove("pytorch_model.bin").await.unwrap();
     }
 }

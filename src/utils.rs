@@ -28,7 +28,7 @@ pub enum OpsError {
     RequestError(#[from] reqwest::Error),
 
     #[error("Request error {0}")]
-    TempfileError(#[from] async_tempfile::Error),
+    TaskJoinErrorr(#[from] tokio::task::JoinError),
 }
 
 /// A static HTTP client for making blocking requests.

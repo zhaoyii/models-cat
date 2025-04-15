@@ -1,13 +1,13 @@
+pub mod async_hub;
 mod ms_hub;
-mod async_hub;
 
 use crate::fslock;
-use ms_hub::synchronous;
 use crate::repo::Repo;
 use crate::utils::{self, BLOCKING_CLIENT, OpsError};
 use indicatif::{
     MultiProgress as MultiProgressBar, ProgressBar, ProgressFinish, ProgressState, ProgressStyle,
 };
+use ms_hub::synchronous;
 use std::fmt;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
