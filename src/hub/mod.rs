@@ -1,3 +1,4 @@
+#[cfg(feature = "tokio")]
 pub mod async_hub;
 mod ms_hub;
 

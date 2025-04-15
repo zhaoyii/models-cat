@@ -14,6 +14,8 @@ When to use models-cat for model downloads? Three main scenarios:
 
 ## Usage
 
+Sync download：
+
 ```rust
 use models_cat::{download_model_with_progress, ProgressBarWrapper};
 
@@ -24,6 +26,24 @@ download_model_with_progress(
 ).unwrap();
 ```
 
+Async download：
+
+```rust
+use models_cat::asynchronous::{downloand_model_with_progress, ProgressBarWrapper};
+
+downloand_model_with_progress(
+    "BAAI/bge-small-zh-v1.5",
+    "model.safetensors",
+    ProgressBarWrapper::default(),
+).await.unwrap();
+```
+
+Asynchronous download requires enabling the tokio feature: 
+
+```toml
+model-cat = { version = "*", features = ["tokio"] }
+```
+
 Download models from ModelScope hosted repositories like [BAAI/bge-small-zh-v1.5](https://www.modelscope.cn/models/BAAI/bge-small-zh-v1.5) to local storage. Default cache path is `[HOME_DIR].cache/modelscope/hub/models/models--BAAI--bge-small-zh-v1.5/`.
 
-[English](README.md) | [中文](README.zh-CN.md)
+[English](https://github.com/zhaoyii/models-cat) | [中文](https://github.com/zhaoyii/models-cat/blob/main/README.zh-CN.md)

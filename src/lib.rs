@@ -59,6 +59,16 @@ pub fn remove_dataset_repo(repo_id: &str) -> Result<(), OpsError> {
     ModelsCat::new(Repo::new_dataset(repo_id)).remove_all()
 }
 
+/// Shortcut removing a local model file
+pub fn remove_model_file(repo_id: &str, filname: &str) -> Result<(), OpsError> {
+    ModelsCat::new(Repo::new_model(repo_id)).remove(filname)
+}
+
+/// Shortcut removing a local dataset file
+pub fn remove_dataset_file(repo_id: &str, filname: &str) -> Result<(), OpsError> {
+    ModelsCat::new(Repo::new_dataset(repo_id)).remove(filname)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,5 +81,103 @@ mod tests {
             ProgressBarWrapper::default(),
         )
         .unwrap();
+    }
+}
+
+#[cfg(feature = "tokio")]
+pub mod asynchronous {
+    pub use crate::hub::async_hub::{
+        ModelsCat, MultiProgressWrapper, Progress, ProgressBarWrapper, ProgressUnit,
+    };
+    pub use crate::repo::{Repo, RepoType};
+    pub use crate::utils::OpsError;
+
+    /// Shortcut for downloading a model
+    pub async fn download_model(repo_id: &str, filename: &str) -> Result<(), OpsError> {
+        ModelsCat::new(Repo::new_model(repo_id))
+            .download(filename)
+            .await
+    }
+
+    /// Shortcut for downloading a model with progress
+    pub async fn download_model_with_progress(
+        repo_id: &str,
+        filename: &str,
+        progress: impl Progress,
+    ) -> Result<(), OpsError> {
+        ModelsCat::new(Repo::new_model(repo_id))
+            .download_with_progress(filename, progress)
+            .await
+    }
+
+    /// Shortcut for downloading a dataset
+    pub async fn download_dataset(repo_id: &str, filename: &str) -> Result<(), OpsError> {
+        ModelsCat::new(Repo::new_dataset(repo_id))
+            .download(filename)
+            .await
+    }
+
+    /// Shortcut for downloading a dataset with progress
+    pub async fn download_dataset_with_progress(
+        repo_id: &str,
+        filename: &str,
+        progress: impl Progress,
+    ) -> Result<(), OpsError> {
+        ModelsCat::new(Repo::new_dataset(repo_id))
+            .download_with_progress(filename, progress)
+            .await
+    }
+
+    /// Shortcut pulling a model repo
+    pub async fn pull_model(repo_id: &str) -> Result<(), OpsError> {
+        ModelsCat::new(Repo::new_model(repo_id)).pull().await
+    }
+
+    /// Shortcut pulling a dataset repo
+    pub async fn pull_dataset(repo_id: &str) -> Result<(), OpsError> {
+        ModelsCat::new(Repo::new_dataset(repo_id)).pull().await
+    }
+
+    /// Shortcut removing a local model repo
+    pub async fn remove_model_repo(repo_id: &str) -> Result<(), OpsError> {
+        ModelsCat::new(Repo::new_model(repo_id)).remove_all().await
+    }
+
+    /// Shortcut removing a local dataset repo
+    pub async fn remove_dataset_repo(repo_id: &str) -> Result<(), OpsError> {
+        ModelsCat::new(Repo::new_dataset(repo_id))
+            .remove_all()
+            .await
+    }
+
+    /// Shortcut removing a local model file
+    pub async fn remove_model_file(repo_id: &str, filname: &str) -> Result<(), OpsError> {
+        ModelsCat::new(Repo::new_model(repo_id))
+            .remove(filname)
+            .await
+    }
+
+    /// Shortcut removing a local dataset file
+    pub async fn remove_dataset_file(repo_id: &str, filname: &str) -> Result<(), OpsError> {
+        ModelsCat::new(Repo::new_dataset(repo_id))
+            .remove(filname)
+            .await
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use tokio::test;
+
+        #[test]
+        async fn test_download_model() {
+            download_model_with_progress(
+                "BAAI/bge-small-zh-v1.5",
+                "model.safetensors",
+                ProgressBarWrapper::default(),
+            )
+            .await
+            .unwrap();
+        }
     }
 }

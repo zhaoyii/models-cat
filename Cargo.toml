@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-async-trait = "0.1.88"
+async-trait = { version = "0.1.88", optional = true }
 dirs = "6.0.0"
 futures = "0.3.31"
 indicatif = "0.17.11"
@@ -15,7 +15,7 @@ serde_json = { version = "1.0.140" }
 sha2 = "0.10.8"
 tempfile = "3.19.1"
 thiserror = "2.0.12"
-tokio = { version = "1.44.2", features = ["full"] }
+tokio = { version = "1.44.2", features = ["full"], optional = true }
 walkdir = "2.5.0"
 
 [target.'cfg(windows)'.dependencies]
@@ -27,3 +27,7 @@ windows-sys = { version = "0.59", features = [
 
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2" }
+
+[features]
+default = []
+tokio = ["tokio/full", "async-trait"]

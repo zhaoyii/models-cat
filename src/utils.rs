@@ -27,6 +27,7 @@ pub enum OpsError {
     #[error("Request error {0}")]
     RequestError(#[from] reqwest::Error),
 
+    #[cfg(feature = "tokio")]
     #[error("Request error {0}")]
     TaskJoinErrorr(#[from] tokio::task::JoinError),
 }
@@ -44,6 +45,7 @@ pub(crate) static BLOCKING_CLIENT: LazyLock<blocking::Client> = LazyLock::new(||
         .expect("Failed to build reqwest client")
 });
 
+#[cfg(feature = "tokio")]
 pub(crate) static ASYNC_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .user_agent("curl/7.79.1")

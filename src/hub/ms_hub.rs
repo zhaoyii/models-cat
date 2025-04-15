@@ -9,7 +9,6 @@
 
 use crate::repo::{Repo, RepoType};
 use crate::utils::OpsError;
-use reqwest::Error;
 use serde::{Deserialize, Serialize};
 
 /// 兼容两种API响应的文件信息结构体
@@ -242,6 +241,7 @@ pub mod synchronous {
     }
 }
 
+#[cfg(feature = "tokio")]
 pub mod asynchronous {
     use super::{ApiResponse, Error, FileInfo};
     use crate::repo::{Repo, RepoType};
@@ -397,6 +397,7 @@ mod synchronous_tests {
     }
 }
 
+#[cfg(feature = "tokio")]
 #[cfg(test)]
 mod asynchronous_tests {
     use super::asynchronous::*;
