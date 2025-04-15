@@ -82,6 +82,21 @@ mod tests {
         )
         .unwrap();
     }
+
+    #[test]
+    fn test_cache_dir_env() {
+        unsafe {
+            std::env::set_var("MODELS_CAT_CACHE_DIR", "./test_cache");
+        }
+        download_model_with_progress(
+            "BAAI/bge-small-zh-v1.5",
+            "model.safetensors",
+            ProgressBarWrapper::default(),
+        )
+        .unwrap();
+
+        std::fs::remove_dir_all(std::path::Path::new("./test_cache")).unwrap();
+    }
 }
 
 #[cfg(feature = "tokio")]

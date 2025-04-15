@@ -1,7 +1,11 @@
 use std::io::Write;
 use std::path::PathBuf;
 
+const MODELS_CAT_CACHE_DIR: &str = "MODELS_CAT_CACHE_DIR";
 fn default_cache_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var(MODELS_CAT_CACHE_DIR) {
+        return PathBuf::from(dir);
+    }
     let mut path = dirs::home_dir().expect("Home directory cannot be found");
     path.push(".cache");
     path.push("modelscope");
