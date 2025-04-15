@@ -40,4 +40,4 @@ libc = { version = "0.2" }
 
 [features]
 default = []
-tokio = ["tokio/full", "async-trait"]
+tokio = ["tokio/full"]
